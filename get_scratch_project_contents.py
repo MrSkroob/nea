@@ -2,7 +2,7 @@ import json
 from dependencies.project_loading_utils import load_project
 
 
-project_json = load_project("scratch_project/Empty Scratch Project.sb3")
+project_json = load_project("scratch_project/Scratch Project.sb3")
 
 
 # print(json.dumps(project_json, indent=4))

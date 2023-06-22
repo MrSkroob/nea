@@ -118,7 +118,7 @@ def add_block_example(project_json: dict, target_index: int, id: int, opcode_dat
 
 def save_data(file_name: str, data: dict):
     """Updates the json data inside the scratch project"""
-    with zipfile.ZipFile(file_name, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as f:
+    with zipfile.ZipFile("scratch_project/" + file_name, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as f:
         json_dumped = json.dumps(data, ensure_ascii=False)
         f.writestr("project.json", data=json_dumped)
         f.testzip()
@@ -143,15 +143,15 @@ def get_variable_value(tokens: list):
 
 def get_value_in_brackets(line: str):
     re_object = re.search(BETWEEN_BRACKETS, line)
-    param = re_object.group().strip("\'\" ")
-    params = param.split(",")
-    return params
+    param = re_object.group().replace(" ", "").split(",")
+    return param
 
 
 def translate(python_code: str, file_name: str, project_json: dict):
     id = 0 # id for each block
 
     sprite_list = [i["name"] for i in project_json["targets"]]
+    lines_checked = {}
     indent_level = []
 
     global_variables = {} # store in studio
@@ -162,8 +162,10 @@ def translate(python_code: str, file_name: str, project_json: dict):
     sprite_is_studio = False
     sprite_variable = ""
 
-    for i, v in enumerate(python_code):
+    for line_number, v in enumerate(python_code):
         # getting current sprite
+        if lines_checked[line_number]: continue
+
         indent_level.append(len(v) - len(v.lstrip()))
         tokens = get_tokens(v)
         if sprite_variable == "":
@@ -193,27 +195,35 @@ def translate(python_code: str, file_name: str, project_json: dict):
                     """
                     According to scratch wiki, global variables are stored in the stage. So this isn't a hack okay!!!!
                     """
-                    global_variables[variable_name] = [variable_name, 0]
+                    global_variables[id + "var"] = [variable_name, 0]
                 else:
-                    local_variables[variable_name] = [variable_name, 0]
-            
+                    local_variables[id + "var"] = [variable_name, 0]
+                id += 1
         elif "def" in tokens:
+            block_to_add = PROCEDURE_PROTOTYPE_DATA.copy()
+            block_to_add["inputs"] = {
+                "custom_block": [
+                    1,
+                    ""
+                ]
+            }
+
+            print("function params", get_value_in_brackets(v))
             pass
             # ok let's try and creating a block
     pass
 
     # updating the project dictionary
     if not sprite_is_studio:
-        project_json["targets"][sprite_index]["variables"] = local_variables
-        project_json["targets"][studio_index]["variables"] = global_variables
-        print("====VARIABLES====")
-        print("LOCAL", sprite_name , local_variables)
-        print("GLOBAL", global_variables)
+        # adding variables created in script
+        for i in global_variables:
+            project_json["targets"][studio_index]["variables"][i] = global_variables[i]
 
-        print(project_json["targets"][sprite_index]["variables"])
+        for i in local_variables:
+            project_json["targets"][sprite_index]["variables"][i] = local_variables[i]
 
     print(project_json)
-    save_data(file_name, project_json)
+    # save_data(file_name, project_json)
 
 
 
@@ -223,7 +233,7 @@ def main():
     python_code = load_python_file(python_file_name)
 
     # scratch_file_name = input("Scratch file to compile to: ")
-    scratch_file_name = "Empty Scratch Project.sb3"
+    scratch_file_name = "Guinnea Pig.sb3"
     project_json = load_scratch_project(scratch_file_name)
 
     opcode_data = get_block_opcode()

@@ -2,8 +2,8 @@ import json
 from dependencies.project_loading_utils import load_project
 
 
-# project_json = load_project("scratch_project/Guinnea Pig.sb3")
-project_json = load_project("scratch_project/Scratch Project.sb3")
+project_json = load_project("scratch_project/Guinnea Pig.sb3")
+# project_json = load_project("scratch_project/Scratch Project.sb3")
 
 
 for i in project_json["targets"]:

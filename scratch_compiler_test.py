@@ -230,6 +230,7 @@ class Compiler():
             block_data_copy["shadow"] = True
             block_data_copy["mutation"] = {
                 "tagName": "mutation",
+                "children": "[]",
                 "proccode": block_name,
                 "argumentids": "[]",
                 "argumentnames": "[]",

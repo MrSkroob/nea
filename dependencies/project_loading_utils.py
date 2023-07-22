@@ -10,5 +10,6 @@ def load_project(file_name: str) -> dict:
 
 
 def load_python_file(file_name: str) -> dict:
+    """Returns the contents of a text file in a line by line array"""
     with open(file_name, "r") as f:
         return f.readlines()

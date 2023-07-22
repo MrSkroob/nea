@@ -2,16 +2,14 @@ import json
 from dependencies.project_loading_utils import load_project
 
 
+# project_json = load_project("scratch_project/Guinnea Pig.sb3")
 project_json = load_project("scratch_project/Scratch Project.sb3")
-
-
-# print(json.dumps(project_json, indent=4))
-# print("\n")
 
 
 for i in project_json["targets"]:
     print("\nTARGET:", i["name"])
     print(i["variables"])
+    print(i["lists"])
     blocks = i["blocks"]
     for id in blocks:
         print(id, json.dumps(blocks[id], indent=4))
@@ -21,7 +19,7 @@ for i in project_json["targets"]:
 # for "motion_turnleft":
 # "DEGREES" : [ -- obviously the name of the parameter
 #   1 -- See below
-#   [ 
+#   [ clear
 #       4, -- See below
 #       "15" -- This is the value inputed by the user, i.e. 15 degrees
 #   ]

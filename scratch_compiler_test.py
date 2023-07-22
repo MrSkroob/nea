@@ -174,6 +174,7 @@ class Compiler():
 
     def create_argument(self, argument_type: str, argument_name: str, parent: str):
         block_id = self.generate_id()
+        argument_id = self.generate_id()
 
         # copy the template dictionary and apply the following attributes:
         block_data_copy = copy.deepcopy(BLOCK_DATA)
@@ -191,7 +192,6 @@ class Compiler():
         # adding the argument to its parent
 
         if self._block_dict[parent]["opcode"] == "procedures_prototype":
-            argument_id = self.generate_id()
             self._block_dict[parent]["inputs"][argument_id] = [
                 1,
                 block_id
@@ -201,7 +201,7 @@ class Compiler():
         if "mutation" in self._block_dict[parent]:
             attributes = self._block_dict[parent]["mutation"]
             attributes["proccode"] += " " + TYPES[argument_type]
-            attributes["argumentids"] = attributes["argumentids"][:-1] + '\"' + argument_name + '\",]'
+            attributes["argumentids"] = attributes["argumentids"][:-1] + '\"' + argument_id + '\",]'
             attributes["argumentnames"] = attributes["argumentnames"][:-1] + '\"' + argument_name + '\",]'
             attributes["argumentdefaults"] = attributes["argumentdefaults"][:-1] + '\"' + '\",]'
 
@@ -230,7 +230,7 @@ class Compiler():
             block_data_copy["shadow"] = True
             block_data_copy["mutation"] = {
                 "tagName": "mutation",
-                "children": "[]",
+                "children": [],
                 "proccode": block_name,
                 "argumentids": "[]",
                 "argumentnames": "[]",

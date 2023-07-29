@@ -151,19 +151,20 @@ class Compiler():
         # adding the argument to its parent
 
         if self._block_dict[parent]["opcode"] == "procedures_prototype":
+            # if it is a function (i.e. mutation), add the following properties to it:            
             self._block_dict[parent]["inputs"][argument_id] = [
                 1,
                 block_id
             ]
 
-        # if it s a function (i.e. mutation), add the following properties to it:
-        if "mutation" in self._block_dict[parent]:
-            # FIXME: causing scratch editor to bug out HERE.
+            # FIXME: causing scratch editor to bug out under HERE.
             attributes = self._block_dict[parent]["mutation"]
             attributes["proccode"] += " " + TYPES[argument_type]
-            attributes["argumentids"] = attributes["argumentids"][:-1] + '\"' + argument_id + '\",]'
-            attributes["argumentnames"] = attributes["argumentnames"][:-1] + '\"' + argument_name + '\",]'
-            attributes["argumentdefaults"] = attributes["argumentdefaults"][:-1] + '\"' + '\",]'
+            # commenting the above code out for some reason deletes the original block.
+            # attributes["argumentids"] = attributes["argumentids"][:-1] + '\"' + argument_id + '\",]'
+            # attributes["argumentnames"] = attributes["argumentnames"][:-1] + '\"' + argument_name + '\",]'
+            # attributes["argumentdefaults"] = attributes["argumentdefaults"][:-1] + '\"' + '\",]'
+
 
         # finally, add the actual block to the list to be saved to the scratch file
         self._block_dict[block_id] = block_data_copy

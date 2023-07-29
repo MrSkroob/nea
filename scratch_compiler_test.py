@@ -157,13 +157,18 @@ class Compiler():
                 block_id
             ]
 
-            # FIXME: causing scratch editor to bug out under HERE.
             attributes = self._block_dict[parent]["mutation"]
+            # FIXME: this specific line below seems to be causing issue.
             attributes["proccode"] += " " + TYPES[argument_type]
-            # commenting the above code out for some reason deletes the original block.
-            # attributes["argumentids"] = attributes["argumentids"][:-1] + '\"' + argument_id + '\",]'
-            # attributes["argumentnames"] = attributes["argumentnames"][:-1] + '\"' + argument_name + '\",]'
-            # attributes["argumentdefaults"] = attributes["argumentdefaults"][:-1] + '\"' + '\",]'
+            if attributes["argumentids"] == "[]":
+                # first time
+                attributes["argumentids"] = attributes["argumentids"][:-1] + '\"' + argument_id + '\"]'
+                attributes["argumentnames"] = attributes["argumentnames"][:-1] + '\"' + argument_name + '\"]'
+                attributes["argumentdefaults"] = attributes["argumentdefaults"][:-1] + '\"' + '\"]'
+            else:
+                attributes["argumentids"] = attributes["argumentids"][:-1] + ',\"' + argument_id + '\"]'
+                attributes["argumentnames"] = attributes["argumentnames"][:-1] + ',\"' + argument_name + '\"]'
+                attributes["argumentdefaults"] = attributes["argumentdefaults"][:-1] + ',\"' + '\"]'
 
 
         # finally, add the actual block to the list to be saved to the scratch file
@@ -180,10 +185,8 @@ class Compiler():
             if not parent in self._block_dict:
                 raise ValueError("Parent does not exist!")
             block_data_copy["parent"] = parent
-            if self._block_dict[parent]["opcode"] == "procedures_definition":
-                pass
-            else:
-                self._block_dict[parent]["next"] = block_id
+            if self._block_dict[parent]["opcode"] != "procedures_prototype":
+                self._block_dict[parent]["next"] = block_id 
         
         if opcode == "procedures_prototype":
             # create the basic template for any future arguments to add. 
@@ -195,7 +198,7 @@ class Compiler():
                 "argumentids": "[]",
                 "argumentnames": "[]",
                 "argumentdefaults": "[]",
-                "warp": False
+                "warp": "false"
             }
             self._block_dict[parent]["inputs"] = {
                 "custom_block": [
@@ -275,7 +278,6 @@ class Compiler():
             elif "def" in tokens:
                 function_name = tokens[tokens.index("def") + 2]
                 function_parent_id = self.create_block("procedures_definition", "", None)
-
                 function_id = self.create_block("procedures_prototype", function_name, function_parent_id)
                 param_list = get_value_in_brackets(v)
 

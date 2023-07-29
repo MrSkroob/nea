@@ -3,7 +3,5 @@ from dependencies import scratch_project, scratch_enums
 
 sprite = scratch_project.Sprite("Sprite1")
 
-def add(a: int, b: int):
-    my_variable = a + b
-    sprite.say(my_variable)
-
+def my_python_function(a: int, b: int):
+    pass

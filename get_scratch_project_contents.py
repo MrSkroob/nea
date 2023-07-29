@@ -2,8 +2,11 @@ import json
 from dependencies.project_loading_utils import load_project
 
 
-project_json = load_project("scratch_project/Guinnea Pig.sb3")
-# project_json = load_project("scratch_project/Scratch Project.sb3")
+# project_json = load_project("scratch_project/Guinnea Pig.sb3")
+project_json = load_project("scratch_project/Scratch Project.sb3")
+
+
+print("FULL: ", json.dumps(project_json, indent=4))
 
 
 for i in project_json["targets"]:
@@ -12,7 +15,7 @@ for i in project_json["targets"]:
     print(i["lists"])
     blocks = i["blocks"]
     for id in blocks:
-        print(id, json.dumps(blocks[id], indent=4))
+        print(id, json.dumps(blocks[id], indent=4, ensure_ascii=True))
 
 
 # example of block data:

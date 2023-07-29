@@ -185,7 +185,7 @@ class Compiler():
             if not parent in self._block_dict:
                 raise ValueError("Parent does not exist!")
             block_data_copy["parent"] = parent
-            if self._block_dict[parent]["opcode"] != "procedures_prototype":
+            if self._block_dict[parent]["opcode"] != "procedures_definition":
                 self._block_dict[parent]["next"] = block_id 
         
         if opcode == "procedures_prototype":

@@ -18,8 +18,8 @@ def print_out_stuff(json_dict: dict):
 project_json = load_project("scratch_project/Scratch Project.sb3")
 print_out_stuff(project_json)
 
-project_json = load_project("scratch_project/Guinnea Pig.sb3")
-print_out_stuff(project_json)
+# project_json = load_project("scratch_project/Guinnea Pig.sb3")
+# print_out_stuff(project_json)
 
 
 # example of block data:

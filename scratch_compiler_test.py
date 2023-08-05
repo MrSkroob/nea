@@ -8,16 +8,72 @@ from dependencies import scratch_exceptions
 
 # useful regexes
 BETWEEN_BRACKETS = r"(?<=\()(.*?)(?=\))"
-LEFT_VARIABLE_DEFINE = r"\w+\s?="
+LEFT_OPERATOR_EQUAL = r".+?(?=\=)"
+LEFT_OPERATOR_PLUS = r".+?(?=\+=)"
+LEFT_OPERATOR_MINUS = r".+?(?=\-=)"
+LEFT_OPERATOR_MUL = r".+?(?=\*=)"
+LEFT_OPERATOR_DIV = r".+?(?=\/=)"
+LEFT_OPERATOR_MOD = r".+?(?=\%=)"
 
-LEFT_OPERATOR_PLUS = r"\w+\s?\+"
-LEFT_OPERATOR_MINUS = r"\w+\s?\-"
-LEFT_OPERATOR_MUL = r"\w+\s?\*"
-LEFT_OPERATOR_DIV = r"\w+\s?\/"
+RIGHT_OPERATOR_EQUAL = r"(?<=\=).*"
+RIGHT_OPERATOR_PLUS = r"(?<=\+=).*"
+RIGHT_OPERATOR_MINUS = r"(?<=\-=).*"
+RIGHT_OPERATOR_MUL = r"(?<=\*=).*"
+RIGHT_OPERATOR_DIV = r"(?<=\/=).*"
+RIGHT_OPERATOR_MOD = r"(?<=\%=).*"
 
-RIGHT_VARIABLE_DEFINE = r"=\s?\w+"
-FUNCTION_NAME = r"(?<=def )(.*$)"
-AFTER_COLON = r"(?<=:)(.*$)"
+GET_LEFT_SIDE = [
+    LEFT_OPERATOR_PLUS,
+    LEFT_OPERATOR_MINUS,
+    LEFT_OPERATOR_MUL,
+    LEFT_OPERATOR_DIV,
+    LEFT_OPERATOR_MOD,
+    LEFT_OPERATOR_EQUAL # this is ordered at the back so we check other operators first. 
+                        # not doing this will make += match to =, resulting in the variable name being
+                        # "variable_1 +"
+]
+
+GET_RIGHT_SIDE = [
+    RIGHT_OPERATOR_PLUS,
+    RIGHT_OPERATOR_MINUS,
+    RIGHT_OPERATOR_MUL,
+    RIGHT_OPERATOR_DIV,
+    RIGHT_OPERATOR_MOD,
+    RIGHT_OPERATOR_EQUAL
+]
+
+# regexes for operators without =
+LEFT_COMPARE = r".+?(?=\==)"
+LEFT_PLUS = r".+?(?=\+)"
+LEFT_MINUS = r".+?(?=\-)"
+LEFT_MUL = r".+?(?=\*)"
+LEFT_DIV = r".+?(?=\/)"
+LEFT_MOD = r".+?(?=\%)"
+
+RIGHT_COMPARE = r"(?<=\==).*"
+RIGHT_PLUS = r"(?<=\+).*"
+RIGHT_MINUS = r"(?<=\-).*"
+RIGHT_MUL = r"(?<=\*).*"
+RIGHT_DIV = r"(?<=\/).*"
+RIGHT_MOD = r"(?<=\%).*"
+
+LEFT_OPERATOR = [
+    LEFT_COMPARE,
+    LEFT_PLUS,
+    LEFT_MINUS,
+    LEFT_MUL,
+    LEFT_DIV,
+    LEFT_MOD,
+]
+
+RIGHT_OPERATOR = [
+    RIGHT_COMPARE,
+    RIGHT_PLUS,
+    RIGHT_MINUS,
+    RIGHT_MUL,
+    RIGHT_DIV,
+    RIGHT_MOD,
+]
 
 # scratch block scaffolding
 KEYWORDS = [
@@ -39,12 +95,47 @@ TYPES = {
 }
 
 
+OPERATORS = {
+    "+=": "operator_add",
+    "-=": "operator_subtract",
+    "*=": "operator_multiply",
+    "/=": "operator_divide",
+    "%=": "operator_mod",
+
+    "+": "operator_add",
+    "-": "operator_subtract",
+    "*": "operator_multiply",
+    "/": "operator_divide",
+    "%": "operator_mod",
+}
+
+
+OPERATOR_TYPE = {
+    "+=": "+",
+    "-=": "-",
+    "*=": "*",
+    "/=": "/",
+    "%=": "%",
+
+    "+": "+",
+    "-": "-",
+    "*": "*",
+    "/": "/",
+    "%": "%",
+    "=": "="
+}
+
+ARGUMENT_CODES = {
+    str: "10",
+    float: "4",
+    int: "4"
+}
+
 ARGUMENT_TYPES = {
     "bool": "argument_reporter_boolean",
     "int": "argument_reporter_string_number",
     "str": "argument_reporter_string_number"
 }
-
 
 BLOCK_DATA = {
     "opcode": "",
@@ -54,8 +145,8 @@ BLOCK_DATA = {
     "fields": {},
     "shadow": False, # tells us whether the block is a "normal block" or a "shadow block. See definition above."
     "topLevel": True, # False if the block has a parent and true otherwise.
-    "x": 50,
-    "y": 50
+    "x": 0,
+    "y": 0
 }
 
 
@@ -91,16 +182,50 @@ def get_tokens(line: str):
     return [i.strip() for i in re.split(r'(\d+|\W+|\s+)', line) if i]
 
 
-def get_variable_name(tokens: list[str]):
-    tokens = [i.strip("\'\"[] ") for i in tokens]
-    if "=" not in tokens: return -1
-    return tokens.index("=") - 1
+def search(line: str, expression: str):
+    match = re.search(expression, line)
+    if match is not None:
+        match = match.group().strip()
+    return match
 
 
-def get_variable_value(tokens: list[str]):
-    index = tokens.index("=")
-    if index == -1: return -1
-    return index + 1
+def get_variable_name(line: str):
+    for i in GET_LEFT_SIDE:
+        match = search(line, i)
+        expression = i
+        if match is not None: break
+    return match, expression
+
+
+def get_left_operator(line: str):
+    for i in LEFT_OPERATOR:
+        match = search(line, i)
+        expression = i
+        if match is not None: break
+    return match, expression
+
+
+def get_right_operator(line: str):
+    for i in RIGHT_OPERATOR:
+        match = search(line, i)
+        expression = i
+        if match is not None: break
+    return match, expression
+
+def get_operator(tokens: [str]):
+    for i in OPERATOR_TYPE:
+        if i in tokens:
+            operator = i
+            break
+    return OPERATOR_TYPE[operator]
+
+
+def get_variable_value(line: str):
+    for i in GET_RIGHT_SIDE:
+        match = search(line, i)
+        expression = i
+        if match is not None: break
+    return match, expression
 
 
 def get_value_in_brackets(line: str):
@@ -118,10 +243,12 @@ class Compiler():
         self._compile_to = file_to_compile_to
 
         self._sprite_list = [i["name"] for i in self._result_file_code["targets"]]
+        self._existing_variables = {}
         self._block_dict = {}
 
         self._block_id = 0
         self._line_number = 0
+        self._indent_level = 0
 
     def generate_id(self):
         """Generates a unique ID... by simply adding 1."""
@@ -158,7 +285,6 @@ class Compiler():
             ]
 
             attributes = self._block_dict[parent]["mutation"]
-            # FIXME: this specific line below seems to be causing issue.
             attributes["proccode"] += " " + TYPES[argument_type]
             if attributes["argumentids"] == "[]":
                 # first time
@@ -175,7 +301,71 @@ class Compiler():
         self._block_dict[block_id] = block_data_copy
         return block_id
     
-    def create_block(self, opcode: str, block_name: str, parent: str | None):
+    def create_operator(self, opcode: str, values: list[dict, dict], parent: str | None):
+        block_id = self.generate_id()
+        block_data_copy = copy.deepcopy(BLOCK_DATA)
+        block_data_copy["opcode"] = opcode
+
+        if parent is not None:
+            block_data_copy["parent"] = parent
+            self._block_dict[parent]["inputs"]["VALUE"][1] = block_id
+
+
+        if values[0]["VariableId"] is not None:
+            value1_code = 3
+            value1 = [
+                12,
+                values[0]["VariableName"],
+                values[0]["VariableId"]
+            ]
+        else:
+            value1_code = 1
+            value1 = [
+                4,
+                values[0]["Value"]
+            ]
+
+        if values[1]["VariableId"] is not None:
+            value2_code = 3
+            value2 = [
+                12,
+                values[1]["VariableName"],
+                values[1]["VariableId"]
+            ]
+        else:
+            value2_code = 1
+            value2 = [
+                4,
+                values[1]["Value"]
+            ]
+
+        block_data_copy["inputs"] = {
+            "NUM1": [
+                value1_code,
+                value1,
+                [
+                    4,
+                    ""
+                ]
+            ],
+            "NUM2": [
+                value2_code,
+                value2,
+                [
+                    4,
+                    ""
+                ]
+            ]
+        }
+        block_data_copy["topLevel"] = False
+
+        del block_data_copy["x"]
+        del block_data_copy["y"]
+
+        self._block_dict[block_id] = block_data_copy
+        return block_id
+    
+    def create_block(self, opcode: str, block_args: dict, parent: str | None):
         block_id = self.generate_id()
         block_data_copy = copy.deepcopy(BLOCK_DATA)
         block_data_copy["opcode"] = opcode
@@ -185,16 +375,16 @@ class Compiler():
             if not parent in self._block_dict:
                 raise ValueError("Parent does not exist!")
             block_data_copy["parent"] = parent
-            if self._block_dict[parent]["opcode"] != "procedures_definition":
-                self._block_dict[parent]["next"] = block_id 
-        
+            self._block_dict[parent]["next"] = block_id 
+        if opcode != "procedures_prototype":
+            block_data_copy["y"] = self._line_number * 25
         if opcode == "procedures_prototype":
             # create the basic template for any future arguments to add. 
             block_data_copy["shadow"] = True
             block_data_copy["mutation"] = {
                 "tagName": "mutation",
                 "children": [],
-                "proccode": block_name,
+                "proccode": block_args["Name"],
                 "argumentids": "[]",
                 "argumentnames": "[]",
                 "argumentdefaults": "[]",
@@ -208,12 +398,95 @@ class Compiler():
             }
             del block_data_copy["x"]
             del block_data_copy["y"]
-        elif opcode == "":
+        elif opcode == "data_setvariableto":
+            if block_args["OperatorId"] is not None:
+                block_data_copy["inputs"]["VALUE"] = [
+                    3,
+                    block_args["OperatorId"],
+                    [
+                        10,
+                        "0"
+                    ]
+                ]
+            else:
+                block_data_copy["inputs"]["VALUE"] = [
+                        1,
+                        [
+                            10,
+                            block_args["Value"]
+                        ]
+                    ]
+            block_data_copy["fields"] = {
+                "VARIABLE": [
+                    block_args["Name"],
+                    block_args["VariableId"]
+                ]
+            }
+        elif opcode == "data_changevariableby":
+            if block_args["ValueId"] is not None:
+                block_data_copy["inputs"]["VALUE"] = [
+                    3,
+                    [
+                        12,
+                        block_args["ValueName"],
+                        block_args["ValueId"]
+                    ],
+                    [
+                        4,
+                        "1"
+                    ]
+                ]
+            else:
+                block_data_copy["inputs"]["VALUE"] = [
+                    1,
+                    [
+                        4,
+                        block_args["Value"]
+                    ]
+                ]
             
-            pass
+            block_data_copy["fields"] = {
+                "VARIABLE": [
+                    block_args["Name"],
+                    block_args["VariableId"]
+                ]
+            }
 
         self._block_dict[block_id] = block_data_copy
         return block_id
+    
+    # def create_set_value(self, variable_name: str, expression: str, operator: str, existing_variables: list, most_recent_block: list):
+    #     if expression in existing_variables:
+    #         if operator == "+":
+    #             most_recent_block[self._indent_level] = self.create_block("data_changevariableby", {"Name": variable_name, "VariableId": existing_variables[variable_name], "ValueId": existing_variables[assigned_expression], "ValueName": assigned_expression}, most_recent_block[self._indent_level])
+    #         else:
+    #             most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": existing_variables[variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
+    #             self.create_operator(OPERATORS[operator], [{"VariableName": variable_name, "VariableId": existing_variables[variable_name]}, {"VariableName": assigned_expression, "VariableId": existing_variables[assigned_expression]}], most_recent_block[self._indent_level])
+    #     elif expression in function_parameters[self._indent_level]:
+    #         if operator == "+":
+    #             most_recent_block[self._indent_level] = self.create_block("data_changevariableby", {"Name": variable_name, "VariableId": function_parameters[self._indent_level][variable_name], "ValueId": function_parameters[self._indent_level][assigned_expression], "ValueName": assigned_expression}, most_recent_block[self._indent_level])
+    #         else:
+    #             most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": function_parameters[self._indent_level][variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
+    #             self.create_operator(OPERATORS[operator], [{"VariableName": variable_name, "VariableId": function_parameters[self._indent_level][variable_name]}, {"VariableName": assigned_expression, "VariableId": function_parameters[self._indent_level][assigned_expression]}], most_recent_block[self._indent_level])
+    #     else:
+    #         most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": existing_variables[variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
+    #         left_value, _ = get_left_operator(expression)
+    #         right_value, _ = get_right_operator(expression)
+
+    #         if left_value in existing_variables.keys():
+    #             left_value = {"VariableName": left_value, "VariableId": existing_variables[left_value]}
+    #         elif left_value in function_parameters[self._indent_level]:
+    #             left_value = {"VariableName": left_value, "VariableId": function_parameters[self._indent_level][left_value]}
+    #         else:
+    #             left_value = {"VariableId": None, "Value": left_value}
+    #         if right_value in existing_variables.keys():
+    #             right_value = {"VariableName": right_value, "VariableId": existing_variables[right_value]}
+    #         elif right_value in function_parameters[self._indent_level]:
+    #             right_value = {"VariableName": right_value, "VariableId": function_parameters[self._indent_level][right_value]}
+    #         else:
+    #             right_value = {"VariableId": None, "Value": right_value}
+
+    #         self.create_operator(OPERATORS[operator], [left_value, right_value], most_recent_block[self._indent_level])
 
     def compile(self):
         global_lists = {}
@@ -221,15 +494,26 @@ class Compiler():
         local_lists = {}
         local_variables = {} # store in sprite
 
+        function_parameters = {}
+        existing_variables = {}
+
         studio_index = 0
         sprite_index = -1 # target index
         sprite_is_studio = False
         sprite_variable = ""
 
+        most_recent_block = {0: self.create_block("event_whenflagclicked", {}, None)}
+
         for line_number, v in enumerate(self._target_code):
             # getting current sprite
             self._line_number = line_number
-            indent_level = (len(v) - len(v.lstrip()))
+            self._indent_level = (len(v) - len(v.lstrip())) // 4
+
+            if self._indent_level not in most_recent_block.keys():
+                most_recent_block[self._indent_level] = None
+
+            print(self._indent_level, most_recent_block[self._indent_level], line_number + 1)
+
             tokens = get_tokens(v)
             if sprite_variable == "":
                 if "scratch_project.Sprite" in v:
@@ -244,42 +528,84 @@ class Compiler():
                     sprite_name = re_object.group().strip("\'\" ")
                     if sprite_name not in self._sprite_list: raise scratch_exceptions.CouldNotFindSprite(sprite_name)
 
-                    index = get_variable_name(tokens)
-                    sprite_variable = tokens[index]
+                    sprite_variable, _ = get_variable_name(v)
                     sprite_index = self._sprite_list.index(sprite_name)
+                    existing_variables[sprite_variable] = "PY_COMPILER"
 
                 elif "scratch_project.Studio" in v:
                     if sprite_variable: raise scratch_exceptions.TooManySprites
 
-                    index = get_variable_name(tokens)
-                    sprite_variable = tokens[index]
+                    sprite_variable, _ = get_variable_name(v)
                     sprite_is_studio = True
                     sprite_index = studio_index
+                    existing_variables[sprite_variable] = "PY_COMPILER"
 
-            index = get_variable_name(tokens)
-            if index != -1:
-                variable_name = tokens[index]
-                if variable_name != sprite_variable:
-                    variable_id = self.generate_id()
-                    if "[" in tokens[index + 1]:
-                        # is a list!
-                        if sprite_is_studio:
-                            global_lists[variable_id] = [variable_name, []]
+            variable_name, _ = get_variable_name(v)
+            if variable_name is not None:
+                if variable_name not in existing_variables.keys():
+                    if variable_name != sprite_variable:
+                        variable_value, _ = get_variable_value(v)
+                        variable_id = self.generate_id()
+                        if "[" in variable_value:
+                            # is a list!
+                            if sprite_is_studio:
+                                global_lists[variable_id] = [variable_name, []]
+                            else:
+                                local_lists[variable_id] = [variable_name, []]
                         else:
-                            local_lists[variable_id] = [variable_name, []]
+                            if sprite_is_studio: # if studio, we will make the variable global.
+                                """
+                                According to scratch wiki, global variables are stored in the stage. So this isn't a hack okay!!!!
+                                """
+                                global_variables[variable_id] = [variable_name, 0]
+                            else:
+                                local_variables[variable_id] = [variable_name, 0]
+                            
+                            most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "Value": str(variable_value), "VariableId": variable_id, "OperatorId": None}, most_recent_block[self._indent_level])
+                        existing_variables[variable_name] = variable_id
+                elif variable_name != sprite_variable:
+                    operator = get_operator(tokens)
+                    assigned_expression, _ = get_variable_value(v)
+                    if assigned_expression in existing_variables:
+                        if operator == "+":
+                            most_recent_block[self._indent_level] = self.create_block("data_changevariableby", {"Name": variable_name, "VariableId": existing_variables[variable_name], "ValueId": existing_variables[assigned_expression], "ValueName": assigned_expression}, most_recent_block[self._indent_level])
+                        else:
+                            most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": existing_variables[variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
+                            self.create_operator(OPERATORS[operator], [{"VariableName": variable_name, "VariableId": existing_variables[variable_name]}, {"VariableName": assigned_expression, "VariableId": existing_variables[assigned_expression]}], most_recent_block[self._indent_level])
+                    elif assigned_expression in function_parameters[self._indent_level]:
+                        if operator == "+":
+                            most_recent_block[self._indent_level] = self.create_block("data_changevariableby", {"Name": variable_name, "VariableId": function_parameters[self._indent_level][variable_name], "ValueId": function_parameters[self._indent_level][assigned_expression], "ValueName": assigned_expression}, most_recent_block[self._indent_level])
+                        else:
+                            most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": function_parameters[self._indent_level][variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
+                            self.create_operator(OPERATORS[operator], [{"VariableName": variable_name, "VariableId": function_parameters[self._indent_level][variable_name]}, {"VariableName": assigned_expression, "VariableId": function_parameters[self._indent_level][assigned_expression]}], most_recent_block[self._indent_level])
                     else:
-                        if sprite_is_studio: # if studio, we will make the variable global.
-                            """
-                            According to scratch wiki, global variables are stored in the stage. So this isn't a hack okay!!!!
-                            """
-                            global_variables[variable_id] = [variable_name, 0]
+                        most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": existing_variables[variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
+                        left_value, _ = get_left_operator(assigned_expression)
+                        right_value, _ = get_right_operator(assigned_expression)
+
+                        if left_value in existing_variables.keys():
+                            left_value = {"VariableName": left_value, "VariableId": existing_variables[left_value]}
+                        elif left_value in function_parameters[self._indent_level]:
+                            left_value = {"VariableName": left_value, "VariableId": function_parameters[self._indent_level][left_value]}
                         else:
-                            local_variables[variable_id] = [variable_name, 0]
+                            left_value = {"VariableId": None, "Value": left_value}
+                        if right_value in existing_variables.keys():
+                            right_value = {"VariableName": right_value, "VariableId": existing_variables[right_value]}
+                        elif right_value in function_parameters[self._indent_level]:
+                            right_value = {"VariableName": right_value, "VariableId": function_parameters[self._indent_level][right_value]}
+                        else:
+                            right_value = {"VariableId": None, "Value": right_value}
+
+                        self.create_operator(OPERATORS[operator], [left_value, right_value], most_recent_block[self._indent_level])
             elif "def" in tokens:
                 function_name = tokens[tokens.index("def") + 2]
-                function_parent_id = self.create_block("procedures_definition", "", None)
-                function_id = self.create_block("procedures_prototype", function_name, function_parent_id)
+                print("FUNCTION DEFINITION ON LINE", line_number + 1)
+                most_recent_block[self._indent_level + 1] = self.create_block("procedures_definition", {}, None)
+                print("FUNCTION ID:", most_recent_block[self._indent_level + 1])
+                function_id = self.create_block("procedures_prototype", {"Name": function_name}, most_recent_block[self._indent_level + 1])
                 param_list = get_value_in_brackets(v)
+
+                params = {}
 
                 if len(param_list) > 0 and param_list[0] != '':
                     for i in param_list:
@@ -293,12 +619,13 @@ class Compiler():
                             raise scratch_exceptions.InvalidArgumentType(param_type)
                         
                         # creating the actual input
-                        self.create_argument(param_type, param, function_id)
-                pass
-                # ok let's try and creating a block
+                        argument_id = self.create_argument(param_type, param, function_id)
+                        params[param] = argument_id
+                        
+                # creating list of params for this specific function so we can use it in variables later. 
+                function_parameters[self._indent_level + 1] = params
         pass
 
-        # updating the project dictionary
         if not sprite_is_studio:
             # adding variables created in script
             for i in global_variables:

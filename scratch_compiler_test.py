@@ -1,5 +1,9 @@
 # testing for basic idea of adding blocks to a scratch project.
 # this one is for a basic block.
+import tokenize
+
+from io import BytesIO
+
 import json
 import zipfile
 import re
@@ -179,7 +183,9 @@ def save_data(file_name: str, data: dict):
 
 
 def get_tokens(line: str):
-    return [i.strip() for i in re.split(r'(\d+|\W+|\s+)', line) if i]
+    expression_bytes = line.strip().encode()
+    tokens = [i.string for i in tokenize.tokenize(BytesIO(expression_bytes).readline)]
+    return tokens[1:]
 
 
 def search(line: str, expression: str):
@@ -212,12 +218,12 @@ def get_right_operator(line: str):
         if match is not None: break
     return match, expression
 
-def get_operator(tokens: [str]):
+def get_operators(line: str):
+    operators = []
     for i in OPERATOR_TYPE:
-        if i in tokens:
-            operator = i
-            break
-    return OPERATOR_TYPE[operator]
+        if i in line:
+            operators.append(i)
+    return operators
 
 
 def get_variable_value(line: str):
@@ -243,7 +249,8 @@ class Compiler():
         self._compile_to = file_to_compile_to
 
         self._sprite_list = [i["name"] for i in self._result_file_code["targets"]]
-        self._existing_variables = {}
+        self._function_variables = {}
+        self._generated_variables = {}
         self._block_dict = {}
 
         self._block_id = 0
@@ -455,47 +462,21 @@ class Compiler():
         self._block_dict[block_id] = block_data_copy
         return block_id
     
-    # def create_set_value(self, variable_name: str, expression: str, operator: str, existing_variables: list, most_recent_block: list):
-    #     if expression in existing_variables:
+    # def create_set_value(self, line: str, tokens: list[str]):
+    #     variable_name, _ = get_variable_name(line)
+    #     assignment, _ = get_variable_value(line) 
+    #     operator = get_operator(tokens)
+    #     if assignment in self._generated_variables[assignment]:
     #         if operator == "+":
-    #             most_recent_block[self._indent_level] = self.create_block("data_changevariableby", {"Name": variable_name, "VariableId": existing_variables[variable_name], "ValueId": existing_variables[assigned_expression], "ValueName": assigned_expression}, most_recent_block[self._indent_level])
-    #         else:
-    #             most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": existing_variables[variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
-    #             self.create_operator(OPERATORS[operator], [{"VariableName": variable_name, "VariableId": existing_variables[variable_name]}, {"VariableName": assigned_expression, "VariableId": existing_variables[assigned_expression]}], most_recent_block[self._indent_level])
-    #     elif expression in function_parameters[self._indent_level]:
-    #         if operator == "+":
-    #             most_recent_block[self._indent_level] = self.create_block("data_changevariableby", {"Name": variable_name, "VariableId": function_parameters[self._indent_level][variable_name], "ValueId": function_parameters[self._indent_level][assigned_expression], "ValueName": assigned_expression}, most_recent_block[self._indent_level])
-    #         else:
-    #             most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": function_parameters[self._indent_level][variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
-    #             self.create_operator(OPERATORS[operator], [{"VariableName": variable_name, "VariableId": function_parameters[self._indent_level][variable_name]}, {"VariableName": assigned_expression, "VariableId": function_parameters[self._indent_level][assigned_expression]}], most_recent_block[self._indent_level])
-    #     else:
-    #         most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": existing_variables[variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
-    #         left_value, _ = get_left_operator(expression)
-    #         right_value, _ = get_right_operator(expression)
+    #             pass
+    #         # we're directly adding or assigning a variable.
 
-    #         if left_value in existing_variables.keys():
-    #             left_value = {"VariableName": left_value, "VariableId": existing_variables[left_value]}
-    #         elif left_value in function_parameters[self._indent_level]:
-    #             left_value = {"VariableName": left_value, "VariableId": function_parameters[self._indent_level][left_value]}
-    #         else:
-    #             left_value = {"VariableId": None, "Value": left_value}
-    #         if right_value in existing_variables.keys():
-    #             right_value = {"VariableName": right_value, "VariableId": existing_variables[right_value]}
-    #         elif right_value in function_parameters[self._indent_level]:
-    #             right_value = {"VariableName": right_value, "VariableId": function_parameters[self._indent_level][right_value]}
-    #         else:
-    #             right_value = {"VariableId": None, "Value": right_value}
-
-    #         self.create_operator(OPERATORS[operator], [left_value, right_value], most_recent_block[self._indent_level])
 
     def compile(self):
         global_lists = {}
         global_variables = {} # store in studio
         local_lists = {}
         local_variables = {} # store in sprite
-
-        function_parameters = {}
-        existing_variables = {}
 
         studio_index = 0
         sprite_index = -1 # target index
@@ -511,8 +492,6 @@ class Compiler():
 
             if self._indent_level not in most_recent_block.keys():
                 most_recent_block[self._indent_level] = None
-
-            print(self._indent_level, most_recent_block[self._indent_level], line_number + 1)
 
             tokens = get_tokens(v)
             if sprite_variable == "":
@@ -530,7 +509,7 @@ class Compiler():
 
                     sprite_variable, _ = get_variable_name(v)
                     sprite_index = self._sprite_list.index(sprite_name)
-                    existing_variables[sprite_variable] = "PY_COMPILER"
+                    self._generated_variables[sprite_variable] = "PY_COMPILER"
 
                 elif "scratch_project.Studio" in v:
                     if sprite_variable: raise scratch_exceptions.TooManySprites
@@ -538,11 +517,11 @@ class Compiler():
                     sprite_variable, _ = get_variable_name(v)
                     sprite_is_studio = True
                     sprite_index = studio_index
-                    existing_variables[sprite_variable] = "PY_COMPILER"
+                    self._generated_variables[sprite_variable] = "PY_COMPILER"
 
             variable_name, _ = get_variable_name(v)
             if variable_name is not None:
-                if variable_name not in existing_variables.keys():
+                if variable_name not in self._generated_variables.keys():
                     if variable_name != sprite_variable:
                         variable_value, _ = get_variable_value(v)
                         variable_id = self.generate_id()
@@ -562,46 +541,51 @@ class Compiler():
                                 local_variables[variable_id] = [variable_name, 0]
                             
                             most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "Value": str(variable_value), "VariableId": variable_id, "OperatorId": None}, most_recent_block[self._indent_level])
-                        existing_variables[variable_name] = variable_id
+                        self._generated_variables[variable_name] = variable_id
                 elif variable_name != sprite_variable:
-                    operator = get_operator(tokens)
+                    operators = get_operators(v)
+                    operator = operators[0]
+
+                    variable_value, _ = get_variable_value(v)
+                    variable_tokens = get_tokens(variable_value)                 
+
+
+
                     assigned_expression, _ = get_variable_value(v)
-                    if assigned_expression in existing_variables:
+                    if assigned_expression in self._generated_variables:
                         if operator == "+":
-                            most_recent_block[self._indent_level] = self.create_block("data_changevariableby", {"Name": variable_name, "VariableId": existing_variables[variable_name], "ValueId": existing_variables[assigned_expression], "ValueName": assigned_expression}, most_recent_block[self._indent_level])
+                            most_recent_block[self._indent_level] = self.create_block("data_changevariableby", {"Name": variable_name, "VariableId": self._generated_variables[variable_name], "ValueId": self._generated_variables[assigned_expression], "ValueName": assigned_expression}, most_recent_block[self._indent_level])
                         else:
-                            most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": existing_variables[variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
-                            self.create_operator(OPERATORS[operator], [{"VariableName": variable_name, "VariableId": existing_variables[variable_name]}, {"VariableName": assigned_expression, "VariableId": existing_variables[assigned_expression]}], most_recent_block[self._indent_level])
-                    elif assigned_expression in function_parameters[self._indent_level]:
+                            most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": self._generated_variables[variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
+                            self.create_operator(OPERATORS[operator], [{"VariableName": variable_name, "VariableId": self._generated_variables[variable_name]}, {"VariableName": assigned_expression, "VariableId": self._generated_variables[assigned_expression]}], most_recent_block[self._indent_level])
+                    elif assigned_expression in self._function_variables[self._indent_level]:
                         if operator == "+":
-                            most_recent_block[self._indent_level] = self.create_block("data_changevariableby", {"Name": variable_name, "VariableId": function_parameters[self._indent_level][variable_name], "ValueId": function_parameters[self._indent_level][assigned_expression], "ValueName": assigned_expression}, most_recent_block[self._indent_level])
+                            most_recent_block[self._indent_level] = self.create_block("data_changevariableby", {"Name": variable_name, "VariableId": self._function_variables[self._indent_level][variable_name], "ValueId": self._function_variables[self._indent_level][assigned_expression], "ValueName": assigned_expression}, most_recent_block[self._indent_level])
                         else:
-                            most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": function_parameters[self._indent_level][variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
-                            self.create_operator(OPERATORS[operator], [{"VariableName": variable_name, "VariableId": function_parameters[self._indent_level][variable_name]}, {"VariableName": assigned_expression, "VariableId": function_parameters[self._indent_level][assigned_expression]}], most_recent_block[self._indent_level])
+                            most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": self._function_variables[self._indent_level][variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
+                            self.create_operator(OPERATORS[operator], [{"VariableName": variable_name, "VariableId": self._function_variables[self._indent_level][variable_name]}, {"VariableName": assigned_expression, "VariableId": self._function_variables[self._indent_level][assigned_expression]}], most_recent_block[self._indent_level])
                     else:
-                        most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": existing_variables[variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
+                        most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": self._generated_variables[variable_name], "OperatorId": "TEMP"}, most_recent_block[self._indent_level])
                         left_value, _ = get_left_operator(assigned_expression)
                         right_value, _ = get_right_operator(assigned_expression)
 
-                        if left_value in existing_variables.keys():
-                            left_value = {"VariableName": left_value, "VariableId": existing_variables[left_value]}
-                        elif left_value in function_parameters[self._indent_level]:
-                            left_value = {"VariableName": left_value, "VariableId": function_parameters[self._indent_level][left_value]}
+                        if left_value in self._generated_variables.keys():
+                            left_value = {"VariableName": left_value, "VariableId": self._generated_variables[left_value]}
+                        elif left_value in self._function_variables[self._indent_level]:
+                            left_value = {"VariableName": left_value, "VariableId": self._function_variables[self._indent_level][left_value]}
                         else:
                             left_value = {"VariableId": None, "Value": left_value}
-                        if right_value in existing_variables.keys():
-                            right_value = {"VariableName": right_value, "VariableId": existing_variables[right_value]}
-                        elif right_value in function_parameters[self._indent_level]:
-                            right_value = {"VariableName": right_value, "VariableId": function_parameters[self._indent_level][right_value]}
+                        if right_value in self._generated_variables.keys():
+                            right_value = {"VariableName": right_value, "VariableId": self._generated_variables[right_value]}
+                        elif right_value in self._function_variables[self._indent_level]:
+                            right_value = {"VariableName": right_value, "VariableId": self._function_variables[self._indent_level][right_value]}
                         else:
                             right_value = {"VariableId": None, "Value": right_value}
 
                         self.create_operator(OPERATORS[operator], [left_value, right_value], most_recent_block[self._indent_level])
             elif "def" in tokens:
                 function_name = tokens[tokens.index("def") + 2]
-                print("FUNCTION DEFINITION ON LINE", line_number + 1)
                 most_recent_block[self._indent_level + 1] = self.create_block("procedures_definition", {}, None)
-                print("FUNCTION ID:", most_recent_block[self._indent_level + 1])
                 function_id = self.create_block("procedures_prototype", {"Name": function_name}, most_recent_block[self._indent_level + 1])
                 param_list = get_value_in_brackets(v)
 
@@ -623,7 +607,7 @@ class Compiler():
                         params[param] = argument_id
                         
                 # creating list of params for this specific function so we can use it in variables later. 
-                function_parameters[self._indent_level + 1] = params
+                self._function_variables[self._indent_level + 1] = params
         pass
 
         if not sprite_is_studio:

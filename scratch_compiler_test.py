@@ -299,6 +299,10 @@ class Compiler():
         self._line_number = 0
         self._indent_level = 0
 
+    
+    def is_id(self, id: str):
+        return id.find("PY_TO_SCRATCH") != -1
+
 
     def get_next_id(self):
         return str(self._block_id + 1) + "PY_TO_SCRATCH"
@@ -373,7 +377,9 @@ class Compiler():
                 self._block_dict[parent]["inputs"]["VALUE"][1] = block_id
             except KeyError:
                 # i apologise to myself in the future for all this terrible code
+                print(block_id)
                 if self._block_dict[parent]["inputs"]["NUM1"][1][1] == block_id:
+                    print(block_id + " 1")
                     self._block_dict[parent]["inputs"]["NUM1"] = [
                         3,
                         block_id,
@@ -383,6 +389,7 @@ class Compiler():
                         ]
                     ]
                 elif self._block_dict[parent]["inputs"]["NUM2"][1][1] == block_id:
+                    print(block_id + " 2")
                     self._block_dict[parent]["inputs"]["NUM2"] = [
                         3,
                         block_id,
@@ -392,69 +399,64 @@ class Compiler():
                         ]
                     ]
 
-
         if values[0]["VariableId"] is not None:
-            value1_code = 3
             value1 = [
-                12,
-                values[0]["VariableName"],
-                values[0]["VariableId"]
+                3,
+                [
+                    12,
+                    values[0]["VariableName"],
+                    values[0]["VariableId"]
+                ]
             ]
         else:
-            value1_code = 1
-            value1 = [
-                4,
-                values[0]["Value"]
-            ]
-            # if values[0]["OperatorId"] is not None:
-            #     value1_code = 3
-            #     value1 = values[0]["OperatorId"]
-            # else:
-            #     value1_code = 1
-            #     value1 = [
-            #         4,
-            #         values[0]["Value"]
-            #     ]
+            if self.is_id(values[0]["Value"]):
+                value1 = [
+                    3,
+                    values[0]["Value"],
+                    [
+                        4,
+                        ""
+                    ]
+                ]
+            else:
+                value1 = [
+                    1,
+                    [
+                        4,
+                        values[0]["Value"]
+                    ]
+                ]
 
         if values[1]["VariableId"] is not None:
-            value2_code = 3
             value2 = [
-                12,
-                values[1]["VariableName"],
-                values[1]["VariableId"]
+                3,
+                [
+                    12,
+                    values[1]["VariableName"],
+                    values[1]["VariableId"]
+                ]
             ]
         else:
-            value2_code = 1
-            value2 = [
-                4,
-                values[1]["Value"]
-            ]
-            # if values[1]["OperatorId"] is not None:
-            #     value2 = values[1]["OperatorId"]
-            # else:
-            #     value2_code = 1
-            #     value2 = [
-            #         4,
-            #         values[1]["Value"]
-            #     ]
-
+            if self.is_id(values[1]["Value"]):
+                value2 = [
+                    3,
+                    values[1]["Value"],
+                    [
+                        4,
+                        ""
+                    ]
+                ]
+            else:
+                value2 = [
+                    1,
+                    [
+                        4,
+                        values[1]["Value"]
+                    ]
+                ]
         block_data_copy["inputs"] = {
-            "NUM1": [
-                value1_code,
-                value1,
-                [
-                    4,
-                    ""
-                ]
-            ],
-            "NUM2": [
-                value2_code,
-                value2,
-                [
-                    4,
-                    ""
-                ]
-            ]
+            "NUM1": value1,
+            "NUM2": value2
         }
         block_data_copy["topLevel"] = False
 
@@ -622,7 +624,8 @@ class Compiler():
         if expression_to_use == operator:
             Warning("This shouldn't happen")
             return ""
-        
+        # yeah i know, lots of duplicate code here. but i'm too scared to refactor in case it breaks everything :(
+
         if operator == "(":
             index = expression_to_use.rfind("(")
             expression_to_use = get_value_in_brackets(expression_to_use[index:])[0]
@@ -645,10 +648,6 @@ class Compiler():
             expression = expression.replace("(" + left + operator + right + ")", id_to_use)
             if expression.find(left + operator + right):
                 expression = expression.replace(left + operator + right, id_to_use)
-            # if left + operator + right in get_value_in_brackets(expression):
-            #     expression = expression.replace("(" + left + operator + right + ")", id_to_use)
-            # else:
-            #     expression = expression.replace(left + operator + right, id_to_use)
 
             linked_list.append(
                 {
@@ -790,7 +789,7 @@ class Compiler():
                     prev_id = most_recent_block[self._indent_level]
                     print("NEW CHAIN")
                     for evaluation in linked_list:
-                        print("Creating", OPERATORS[evaluation["Operator"]], "Parent:", prev_id)
+                        print("Creating", OPERATORS[evaluation["Operator"]], "Id:", evaluation["Id"], "Parent:", prev_id)
                         self.create_operator(OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
                         prev_id = evaluation["Id"]
 

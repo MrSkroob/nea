@@ -8,7 +8,7 @@ class Coordinates:
 
 
 class Effect(Enum):
-    COLOR = 0
+    COLOR = 0 # using american spelling to be consistent with Scratch.
     FISHEYE = 1
     WHIRL = 2
     PIXELATE = 3

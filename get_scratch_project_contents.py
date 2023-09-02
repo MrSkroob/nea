@@ -15,11 +15,11 @@ def print_out_stuff(json_dict: dict):
             print(id, json.dumps(blocks[id], indent=4, ensure_ascii=True))
 
 
-# project_json = load_project("scratch_project/Scratch Project.sb3")
-# print_out_stuff(project_json)
-
-project_json = load_project("scratch_project/Guinnea Pig.sb3")
+project_json = load_project("scratch_project/Scratch Project.sb3")
 print_out_stuff(project_json)
+
+# project_json = load_project("scratch_project/Guinnea Pig.sb3")
+# print_out_stuff(project_json)
 
 
 # example of block data:
@@ -38,7 +38,7 @@ From: https://en.scratch-wiki.info/wiki/Scratch_File_Format
 A shadow block is a reporter in an input for which one can enter or pick a value, 
 and which cannnot be dragged around but can be replaced by a normal reporter.
 [7] Scratch internally considers these to be blocks although they are not usually thought of as such. 
-(These notions come from Blockly, which Scratch Blocks is based on.) 
+(These notions come from Blockly, which Scratch Blocks are based on.) 
 
 An object associating names with arrays representing inputs into which other blocks may be dropped, including C mouths. 
 The first element of each array is 1 if the input is a shadow, 2 if there is no shadow, and 3 if there is a shadow but it is obscured by the input.

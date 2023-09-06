@@ -440,6 +440,11 @@ class Compiler():
             block_data_copy["parent"] = parent
             if self._block_dict[parent]["opcode"] == "control_if":
                 self._block_dict[parent]["inputs"]["CONDITION"][1] = block_id
+            elif self._block_dict[parent]["opcode"] == "operator_not":
+                self._block_dict[parent]["inputs"]["OPERAND"] = [
+                    2,
+                    block_id
+                ]
             elif self._block_dict[parent]["opcode"] in BOOLEAN_OPERATOR_LIST:
                 try:
                     if self._block_dict[parent]["inputs"]["OPERAND1"][1][1] == block_id:
@@ -523,7 +528,6 @@ class Compiler():
                                     ""
                                 ]
                             ]
-
         if values[0]["VariableId"] is not None:
             value1 = [
                 3,
@@ -598,6 +602,10 @@ class Compiler():
                 "NUM1": value1,
                 "NUM2": value2
             }
+        elif opcode == "operator_not":
+            block_data_copy["inputs"]["OPERAND"] = [
+                value1
+            ]
         else:
             block_data_copy["inputs"] = {
                 "OPERAND1": value1,
@@ -841,16 +849,7 @@ class Compiler():
             right = expression_to_use[index + 1:]
 
             print(left, right)
-
-    #         "(",
-    # "?",
-    # "=",
-    # "<",
-    # ">",
-    # "!",
-    # "&",
-    # "|"
-
+            
             left = re.split(r"[\?\=\<\>\!\&\|]", left)[-1]
             right = re.split(r"[\?\=\<\>\!\&\|]", right)[0]
 
@@ -870,6 +869,21 @@ class Compiler():
                     "Operator": operator,
                     "Value": [left_result, right_result],
                     "Id": id_to_use,
+                }
+            )
+            self.evaluate_boolean(expression, linked_list)
+        elif operator == "!":
+            right = expression_to_use[index + 1:]
+            right = re.sub(r"[()]", "", right).strip()
+            right_result = self.get_variable_table_for_operator(self.evaluate_boolean(right, linked_list))
+            id_to_use = self.generate_id()
+            expression = expression.replace(operator + right, id_to_use)
+
+            linked_list.append(
+                {
+                    "Operator": operator,
+                    "Value": [right_result, right_result],
+                    "Id": id_to_use
                 }
             )
             self.evaluate_boolean(expression, linked_list)
@@ -918,7 +932,7 @@ class Compiler():
         prev_id = most_recent_block[self._indent_level + 1]
         for evaluation in linked_list:
             if evaluation["Operator"] == ".":
-                raise scratch_exceptions.UnsupportedFeature("!= (please use not == instead)")
+                raise scratch_exceptions.UnsupportedFeature("!= (please use  == instead)")
             self.create_operator(BOOLEAN_OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
             prev_id = evaluation["Id"]
         # new variation of the "self.evaluate()" method. 

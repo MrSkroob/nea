@@ -15,11 +15,11 @@ def print_out_stuff(json_dict: dict):
             print(id, json.dumps(blocks[id], indent=4, ensure_ascii=True))
 
 
-project_json = load_project("scratch_project/Scratch Project.sb3")
-print_out_stuff(project_json)
-
-# project_json = load_project("scratch_project/Guinnea Pig.sb3")
+# project_json = load_project("scratch_project/Scratch Project.sb3")
 # print_out_stuff(project_json)
+
+project_json = load_project("scratch_project/Guinnea Pig.sb3")
+print_out_stuff(project_json)
 
 
 # example of block data:

@@ -1,3 +1,8 @@
+# this script is for autocompletion for Scratch methods. 
+# the compiler will use the exact names to know what block to create. 
+# so far it doesn't do that because i haven't coded it in...
+
+
 from __future__ import annotations
 from . import scratch_enums
 

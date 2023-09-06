@@ -102,6 +102,25 @@ TYPES = {
 }
 
 
+OPERATOR_LIST = [
+    "operator_add",
+    "operator_divide",
+    "operator_subtract",
+    "operator_multiply",
+    "operator_mod",
+]
+
+
+BOOLEAN_OPERATOR_LIST = [
+    "operator_equals",
+    "operator_lt",
+    "operator_gt",
+    "operator_not",
+    "operator_and",
+    "operator_or"
+]
+
+
 OPERATORS = {
     "+=": "operator_add",
     "-=": "operator_subtract",
@@ -117,13 +136,37 @@ OPERATORS = {
 }
 
 BOOLEAN_OPERATORS = {
-    "==": "operator_equals",
+    "?": ".", # I'll need special behaviour for this BECAUSE OF COURSE I DO
+    "=": "operator_equals",
     "<": "operator_lt",
     ">": "operator_gt",
-    "not": "operator_not",
-    "and": "operator_and",
-    "or": "operator_or"
+    "!": "operator_not",
+    "&": "operator_and",
+    "|": "operator_or"
 }
+
+
+BOOLEAN_SUB = {
+    "!=": "?",
+    "==": "=",
+    "<": "<",
+    ">": ">",
+    "not": "!",
+    "and": "&",
+    "or": "|"
+}
+
+
+BOOLEAN_ORDER = [
+    "(",
+    "?",
+    "=",
+    "<",
+    ">",
+    "!",
+    "&",
+    "|"
+]
 
 
 OPERATOR_TYPE = {
@@ -310,7 +353,6 @@ class Compiler():
         self._prev_line_number = -1
         self._indent_level = 0
 
-    
     def is_id(self, id: str):
         return id.find("PY_TO_SCRATCH") != -1
 
@@ -394,16 +436,14 @@ class Compiler():
 
         if self._line_number not in self._function_variables.keys():
             self._function_variables[self._line_number] = []
-
         if parent is not None:
             block_data_copy["parent"] = parent
-            try:
-                self._block_dict[parent]["inputs"]["VALUE"][1] = block_id
-            except KeyError:
-                # i apologise to myself in the future for all this terrible code
+            if self._block_dict[parent]["opcode"] == "control_if":
+                self._block_dict[parent]["inputs"]["CONDITION"][1] = block_id
+            elif self._block_dict[parent]["opcode"] in BOOLEAN_OPERATOR_LIST:
                 try:
-                    if self._block_dict[parent]["inputs"]["NUM1"][1][1] == block_id:
-                        self._block_dict[parent]["inputs"]["NUM1"] = [
+                    if self._block_dict[parent]["inputs"]["OPERAND1"][1][1] == block_id:
+                        self._block_dict[parent]["inputs"]["OPERAND1"] = [
                             3,
                             block_id,
                             [
@@ -411,8 +451,8 @@ class Compiler():
                                 ""
                             ]
                         ]
-                    elif self._block_dict[parent]["inputs"]["NUM2"][1][1] == block_id:
-                        self._block_dict[parent]["inputs"]["NUM2"] = [
+                    elif self._block_dict[parent]["inputs"]["OPERAND2"][1][1] == block_id:
+                        self._block_dict[parent]["inputs"]["OPERAND2"] = [
                             3,
                             block_id,
                             [
@@ -421,8 +461,8 @@ class Compiler():
                             ]
                         ]
                 except IndexError:
-                    if self._block_dict[parent]["inputs"]["NUM1"][1] == block_id:
-                        self._block_dict[parent]["inputs"]["NUM1"] = [
+                    if self._block_dict[parent]["inputs"]["OPERAND1"][1] == block_id:
+                        self._block_dict[parent]["inputs"]["OPERAND1"] = [
                             3,
                             block_id,
                             [
@@ -430,8 +470,8 @@ class Compiler():
                                 ""
                             ]
                         ]
-                    elif self._block_dict[parent]["inputs"]["NUM2"][1] == block_id:
-                        self._block_dict[parent]["inputs"]["NUM2"] = [
+                    elif self._block_dict[parent]["inputs"]["OPERAND2"][1] == block_id:
+                        self._block_dict[parent]["inputs"]["OPERAND2"] = [
                             3,
                             block_id,
                             [
@@ -439,6 +479,50 @@ class Compiler():
                                 ""
                             ]
                         ]
+
+            else:
+                try:
+                    self._block_dict[parent]["inputs"]["VALUE"][1] = block_id
+                except KeyError:
+                    # i apologise to myself in the future for all this terrible code
+                    try:
+                        if self._block_dict[parent]["inputs"]["NUM1"][1][1] == block_id:
+                            self._block_dict[parent]["inputs"]["NUM1"] = [
+                                3,
+                                block_id,
+                                [
+                                    4,
+                                    ""
+                                ]
+                            ]
+                        elif self._block_dict[parent]["inputs"]["NUM2"][1][1] == block_id:
+                            self._block_dict[parent]["inputs"]["NUM2"] = [
+                                3,
+                                block_id,
+                                [
+                                    4,
+                                    ""
+                                ]
+                            ]
+                    except IndexError:
+                        if self._block_dict[parent]["inputs"]["NUM1"][1] == block_id:
+                            self._block_dict[parent]["inputs"]["NUM1"] = [
+                                3,
+                                block_id,
+                                [
+                                    4,
+                                    ""
+                                ]
+                            ]
+                        elif self._block_dict[parent]["inputs"]["NUM2"][1] == block_id:
+                            self._block_dict[parent]["inputs"]["NUM2"] = [
+                                3,
+                                block_id,
+                                [
+                                    4,
+                                    ""
+                                ]
+                            ]
 
         if values[0]["VariableId"] is not None:
             value1 = [
@@ -509,10 +593,16 @@ class Compiler():
                         values[1]["Value"]
                     ]
                 ]
-        block_data_copy["inputs"] = {
-            "NUM1": value1,
-            "NUM2": value2
-        }
+        if opcode in OPERATOR_LIST:
+            block_data_copy["inputs"] = {
+                "NUM1": value1,
+                "NUM2": value2
+            }
+        else:
+            block_data_copy["inputs"] = {
+                "OPERAND1": value1,
+                "OPERAND2": value2
+            }
         block_data_copy["topLevel"] = False
 
         del block_data_copy["x"]
@@ -531,7 +621,13 @@ class Compiler():
             if parent not in self._block_dict.keys():
                 raise ValueError("Parent does not exist!")
             block_data_copy["parent"] = parent
-            self._block_dict[parent]["next"] = block_id 
+            if self._block_dict[parent]["opcode"] == "control_if":
+                if self._block_dict[parent]["inputs"]["SUBSTACK"][1] == "TEMP":
+                    self._block_dict[parent]["inputs"]["SUBSTACK"][1] = block_id
+                else:
+                    self._block_dict[parent]["next"] = block_id
+            else:
+                self._block_dict[parent]["next"] = block_id
         if opcode != "procedures_prototype":
             block_data_copy["y"] = self._line_number * 25
         if opcode == "procedures_prototype":
@@ -578,6 +674,10 @@ class Compiler():
                     block_args["VariableId"]
                 ]
             }
+        elif opcode == "control_if":
+            if block_args["CONDITION"] is not None:
+                block_data_copy["inputs"]["CONDITION"] = block_args["CONDITION"]
+                block_data_copy["inputs"]["SUBSTACK"] = [2, "TEMP"]
 
         self._block_dict[block_id] = block_data_copy
         return block_id
@@ -586,7 +686,9 @@ class Compiler():
     def get_variable_table_for_operator(self, potential_variable_name: str):
         if potential_variable_name in self._generated_variables.keys():
             return {"VariableName": potential_variable_name, "VariableId": self._generated_variables[potential_variable_name]}
-        else:            
+        else:
+            potential_variable_name = potential_variable_name.replace("'", "")
+            potential_variable_name = potential_variable_name.replace('"', "")
             return {"VariableId": None, "OperatorId": None, "Value": potential_variable_name}
 
 
@@ -603,6 +705,13 @@ class Compiler():
                 return variable_name + operator + right_side
         return line
     
+    def convert_expression_boolean(self, line: str):
+        """Formats the expression to have no whitespace
+        and replaces boolean operators with a more processable type"""
+        line = "".join(line.split())
+        for i in BOOLEAN_SUB:
+            line = line.replace(i, BOOLEAN_SUB[i])
+        return line     
 
     def get_operator(self, line: str, operator_order: list[str]):
         operator = ""
@@ -619,7 +728,7 @@ class Compiler():
         expression = self.convert_expression(line)
         # expression = expression.replace("()", "") not sure if this line is needed.
         operator, index = self.get_operator(expression, REVERSED_ORDER)
-
+        
         if operator == "=":
             # ignoring "=" operators. 
             expression = expression[index + 1:]
@@ -698,8 +807,95 @@ class Compiler():
     
 
     def evaluate_boolean(self, line: str, linked_list: list[dict]):
+        expression = self.convert_expression_boolean(line)
+        print(expression)
+        operator, index = self.get_operator(expression, BOOLEAN_ORDER)
+        expression_to_use = expression
 
-        raise NotImplementedError
+        if expression_to_use == "True":
+            raise scratch_exceptions.UnsupportedFeature("Bare booleans. (Try doing 1 == 1 instead)")
+        elif expression_to_use == "False":
+            raise scratch_exceptions.UnsupportedFeature("Bare booleans. (Try doing 1 != 1 instead)")
+
+        if index == -1:
+            return line
+        
+        if expression_to_use == operator:
+            Warning("This shouldn't happen")
+            return ""
+        if operator == "(":
+            # handling stuff in between brackets
+            index = expression_to_use.rfind("(")
+            expression_to_use = get_value_in_brackets(expression_to_use[index:])[0]
+
+            # get the operator inside the bracket, if there is one.
+            operator, index = self.get_operator(expression_to_use, BOOLEAN_ORDER)
+
+            left = expression_to_use[:index]
+            right = expression_to_use[index + 1:]
+
+            print(left, right)
+
+    #         "(",
+    # "?",
+    # "=",
+    # "<",
+    # ">",
+    # "!",
+    # "&",
+    # "|"
+
+            left = re.split(r"[\?\=\<\>\!\&\|]", left)[-1]
+            right = re.split(r"[\?\=\<\>\!\&\|]", right)[0]
+
+            left = re.sub(r"[()]", "", left).strip()
+            right = re.sub(r"[()]", "", right).strip()
+
+            left_result = self.get_variable_table_for_operator(self.evaluate_boolean(left, linked_list))
+            right_result = self.get_variable_table_for_operator(self.evaluate_boolean(right, linked_list))
+
+            id_to_use = self.generate_id()
+            expression = expression.replace("(" + left + operator + right + ")", id_to_use)
+            if expression.find(left + operator + right):
+                expression = expression.replace(left + operator + right, id_to_use)
+
+            linked_list.append(
+                {
+                    "Operator": operator,
+                    "Value": [left_result, right_result],
+                    "Id": id_to_use,
+                }
+            )
+            self.evaluate_boolean(expression, linked_list)
+        else:
+            left = expression_to_use[:index]
+            right = expression_to_use[index + 1:]
+
+            print(left, right)
+
+            left = re.split(r"[\?\=\<\>\!\&\|]", left)[-1]
+            right = re.split(r"[\?\=\<\>\!\&\|]", right)[0]
+
+            left = re.sub(r"[()]", "", left).strip()
+            right = re.sub(r"[()]", "", right).strip()
+
+            left_result = self.get_variable_table_for_operator(self.evaluate_boolean(left, linked_list))
+            right_result = self.get_variable_table_for_operator(self.evaluate_boolean(right, linked_list))
+
+            id_to_use = self.generate_id()
+
+            expression = expression.replace(left + operator + right, id_to_use)
+
+            linked_list.append(
+                {
+                    "Operator": operator,
+                    "Value": [left_result, right_result],
+                    "Id": id_to_use,
+                }
+            )
+            self.evaluate_boolean(expression, linked_list)
+
+        return expression
 
 
     def compile(self):
@@ -724,7 +920,6 @@ class Compiler():
                 most_recent_block[self._indent_level] = None
 
             tokens = get_tokens(v)
-            print(tokens)
             if sprite_variable == "":
                 if "scratchproject.Sprite" in v:
                     # check if we've already defined a sprite variable
@@ -751,7 +946,57 @@ class Compiler():
                     self._generated_variables[sprite_variable] = "PY_COMPILER"
 
             variable_name, _ = get_variable_name(v)
-            if variable_name is not None:
+            if "def" in tokens:                
+                function_name = tokens[tokens.index("def") + 1]
+                most_recent_block[self._indent_level + 1] = self.create_block("procedures_definition", {}, None)
+                function_id = self.create_block("procedures_prototype", {"Name": function_name}, most_recent_block[self._indent_level + 1])
+                param_string = get_value_in_brackets(v)[0]
+                if not param_string:
+                    param_list = []
+                else:
+                    param_list = (''.join(param_string.split())).split(",")
+                params = {}
+
+                if len(param_list) > 0 and param_list[0] != '':
+                    for i in param_list:
+                        split_param = i.split(":")
+                        param = split_param[0]
+                        param_type = split_param[1]
+
+                        try:
+                            TYPES[param_type]
+                        except KeyError:
+                            raise scratch_exceptions.InvalidArgumentType(param_type)
+                        
+                        # creating the actual input
+                        argument_id = self.create_argument(param_type, param, function_id)
+                        params[param] = [argument_id, param_type, param, function_id]
+                        
+                # creating list of params for this specific function so we can use it in variables later.
+                self._function_variables[self._indent_level + 1] = params
+            elif "if" in tokens:
+                most_recent_block[self._indent_level + 1] = self.create_block("control_if", {"CONDITION": [2, "TEMP"]}, most_recent_block[self._indent_level])
+                most_recent_block[self._indent_level] = most_recent_block[self._indent_level + 1]
+                statement = v[2:].rstrip()[:-1]
+                # we get everything between the "if" and the ":"
+                # if the string we get from this is invalid, then there would've been a syntax error anyway.
+                linked_list = []
+                self.evaluate_boolean(statement, linked_list)
+                linked_list.reverse()
+                if linked_list == []:
+                    raise scratch_exceptions.UnsupportedFeature("no comparators in boolean statement")
+                
+                prev_id = most_recent_block[self._indent_level + 1]
+                for evaluation in linked_list:
+                    if evaluation["Operator"] == ".":
+                        raise scratch_exceptions.UnsupportedFeature("!= (please use not == instead)")
+                    self.create_operator(BOOLEAN_OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
+                    prev_id = evaluation["Id"]
+                # new variation of the "self.evaluate()" method. 
+            elif "else" in tokens:
+                # i'm presumably able to directly alter the opcode in and if statement
+                pass
+            elif variable_name is not None:
                 if variable_name not in self._generated_variables.keys():
                     if variable_name != sprite_variable:
                         variable_value, _ = get_variable_value(v)
@@ -820,44 +1065,6 @@ class Compiler():
                             self.create_operator(OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
                             prev_id = evaluation["Id"]
 
-            elif "def" in tokens:                
-                function_name = tokens[tokens.index("def") + 1]
-                most_recent_block[self._indent_level + 1] = self.create_block("procedures_definition", {}, None)
-                function_id = self.create_block("procedures_prototype", {"Name": function_name}, most_recent_block[self._indent_level + 1])
-                param_string = get_value_in_brackets(v)[0]
-                if not param_string:
-                    param_list = []
-                else:
-                    param_list = (''.join(param_string.split())).split(",")
-                params = {}
-
-                if len(param_list) > 0 and param_list[0] != '':
-                    for i in param_list:
-                        split_param = i.split(":")
-                        param = split_param[0]
-                        param_type = split_param[1]
-
-                        try:
-                            TYPES[param_type]
-                        except KeyError:
-                            raise scratch_exceptions.InvalidArgumentType(param_type)
-                        
-                        # creating the actual input
-                        argument_id = self.create_argument(param_type, param, function_id)
-                        params[param] = [argument_id, param_type, param, function_id]
-                        
-                # creating list of params for this specific function so we can use it in variables later.
-                self._function_variables[self._indent_level + 1] = params
-            elif "if" in tokens:
-                statement = v[2:].rstrip()[:-1]
-                # we get everything between the "if" and the ":"
-                # if the string we get from this is invalid, then there would've been a syntax error anyway.
-                linked_list = []
-                self.evaluate_boolean(statement, linked_list)
-                # new variation of the "self.evaluate()" method. 
-            elif "else" in tokens:
-                # i'm presumably able to directly alter the opcode in and if statement
-                pass
             self._prev_line_number = self._line_number
 
         if not sprite_is_studio:

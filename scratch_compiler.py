@@ -626,6 +626,13 @@ class Compiler():
                     self._block_dict[parent]["inputs"]["SUBSTACK"][1] = block_id
                 else:
                     self._block_dict[parent]["next"] = block_id
+            elif self._block_dict[parent]["opcode"] == "control_if_else":
+                if self._block_dict[parent]["inputs"]["SUBSTACK"][1] == "TEMP":
+                    self._block_dict[parent]["inputs"]["SUBSTACK"][1] = block_id
+                elif self._block_dict[parent]["inputs"]["SUBSTACK2"][1] == "TEMP":
+                    self._block_dict[parent]["inputs"]["SUBSTACK2"][1] = block_id
+                else:
+                    self._block_dict[parent]["next"] = block_id
             else:
                 self._block_dict[parent]["next"] = block_id
         if opcode != "procedures_prototype":
@@ -722,7 +729,6 @@ class Compiler():
                 operator = i
                 break
         return operator, index
-
 
     def evaluate(self, line: str, linked_list: list[dict]):
         expression = self.convert_expression(line)
@@ -897,6 +903,25 @@ class Compiler():
 
         return expression
 
+    def if_statement(self, line: str, most_recent_block: {int: str}):
+        most_recent_block[self._indent_level + 1] = self.create_block("control_if", {"CONDITION": [2, "TEMP"]}, most_recent_block[self._indent_level])
+        most_recent_block[self._indent_level] = most_recent_block[self._indent_level + 1]
+        statement = line[2:].rstrip()[:-1]
+        # we get everything between the "if" and the ":"
+        # if the string we get from this is invalid, then there would've been a syntax error anyway.
+        linked_list = []
+        self.evaluate_boolean(statement, linked_list)
+        linked_list.reverse()
+        if linked_list == []:
+            raise scratch_exceptions.UnsupportedFeature("no comparators in boolean statement")
+        
+        prev_id = most_recent_block[self._indent_level + 1]
+        for evaluation in linked_list:
+            if evaluation["Operator"] == ".":
+                raise scratch_exceptions.UnsupportedFeature("!= (please use not == instead)")
+            self.create_operator(BOOLEAN_OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
+            prev_id = evaluation["Id"]
+        # new variation of the "self.evaluate()" method. 
 
     def compile(self):
         global_lists = {}
@@ -975,26 +1000,30 @@ class Compiler():
                 # creating list of params for this specific function so we can use it in variables later.
                 self._function_variables[self._indent_level + 1] = params
             elif "if" in tokens:
-                most_recent_block[self._indent_level + 1] = self.create_block("control_if", {"CONDITION": [2, "TEMP"]}, most_recent_block[self._indent_level])
-                most_recent_block[self._indent_level] = most_recent_block[self._indent_level + 1]
-                statement = v[2:].rstrip()[:-1]
-                # we get everything between the "if" and the ":"
-                # if the string we get from this is invalid, then there would've been a syntax error anyway.
-                linked_list = []
-                self.evaluate_boolean(statement, linked_list)
-                linked_list.reverse()
-                if linked_list == []:
-                    raise scratch_exceptions.UnsupportedFeature("no comparators in boolean statement")
-                
-                prev_id = most_recent_block[self._indent_level + 1]
-                for evaluation in linked_list:
-                    if evaluation["Operator"] == ".":
-                        raise scratch_exceptions.UnsupportedFeature("!= (please use not == instead)")
-                    self.create_operator(BOOLEAN_OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
-                    prev_id = evaluation["Id"]
-                # new variation of the "self.evaluate()" method. 
+                self.if_statement(v, most_recent_block)
             elif "else" in tokens:
-                # i'm presumably able to directly alter the opcode in and if statement
+                prev_op_code = self._block_dict[most_recent_block[self._indent_level]]["opcode"]
+                if prev_op_code == "control_if":
+                    self._block_dict[most_recent_block[self._indent_level]]["opcode"] = "control_if_else"
+                    self._block_dict[most_recent_block[self._indent_level]]["inputs"]["SUBSTACK2"] = [
+                        2,
+                        "TEMP"
+                    ]
+                    most_recent_block[self._indent_level + 1] = most_recent_block[self._indent_level]
+                else:
+                    raise SyntaxError
+                pass
+            elif "elif" in tokens:
+                prev_op_code = self._block_dict[most_recent_block[self._indent_level]]["opcode"]
+                if prev_op_code == "control_if":
+                    self._block_dict[most_recent_block[self._indent_level]]["opcode"] = "control_if_else"
+                    self._block_dict[most_recent_block[self._indent_level]]["inputs"]["SUBSTACK2"] = [
+                        2,
+                        "TEMP"
+                    ]
+                    self.if_statement(v, most_recent_block)
+                else:
+                    raise SyntaxError
                 pass
             elif variable_name is not None:
                 if variable_name not in self._generated_variables.keys():

@@ -703,6 +703,22 @@ class Compiler():
                     block_args.get("VariableId", None)
                 ]
             }
+        elif opcode == "data_changevariableby":
+            block_data_copy["inputs"]["VALUE"] = [
+                1,
+                [
+                    4,
+                    block_args["Value"]
+                ]
+            ]
+            block_data_copy["fields"] = {
+                "VARIABLE": [
+                    block_args["Name"],
+                    block_args.get("VariableId", None)
+                ]
+            }
+            pass
+            # if block_args.get("value")
         elif opcode == "control_if":
             if block_args.get("CONDITION", None) is not None:
                 block_data_copy["inputs"]["CONDITION"] = block_args["CONDITION"]
@@ -1062,23 +1078,52 @@ class Compiler():
                 iterator1 = tokens[1]
                 variable_id = self.generate_id()
                 local_variables[variable_id] = [iterator1, 0]
-                self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": iterator1, "VariableId": variable_id, "Value": 0}, self._most_recent_block[self._indent_level])
                 
                 in_keyword_index = tokens.index("in")
                 iterating = tokens[in_keyword_index + 1]
                 if iterating == "range":
-                    
+                    parameters = get_value_in_brackets(v)
+                    length = len(parameters)
+
+                    if length == 1:
+                        # just take the first value
+                        # TODO make sure to turn this into a function so i can use this for other parameters in the range()
+                        start = 1
+                        self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": iterator1, "VariableId": variable_id, "Value": start}, self._most_recent_block[self._indent_level])
+                        self._most_recent_block[self._indent_level] = self.create_block("control_repeat", {"End": "TEMP", "OperatorId": "TEMP"}, self._most_recent_block[self._indent_level])
+                        self._most_recent_block[self._indent_level + 1] = self._most_recent_block[self._indent_level]
+                        linked_list = []
+                        self.evaluate(parameters[0], linked_list)
+                        linked_list.reverse()
+                        prev_id = self._most_recent_block[self._indent_level]
+                        # we have to parent this to something, right?
+                        for evaluation in linked_list:
+                            # iterate through, and simply create an operator using the data provided. 
+                            self.create_operator(OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
+                            prev_id = evaluation["Id"]
+                        
+                        change = 1
+                        self._most_recent_block[self._indent_level + 1] = self.create_block("data_changevariableby", {"Name": iterator1, "VariableId": variable_id, "Value": change}, self._most_recent_block[self._indent_level + 1])
+                        pass
+                    elif length == 2:
+                        pass
+                    elif length == 3:
+                        pass
+                    else:
+                        raise SyntaxError("Line", self._line_number)
+                    # self._most_recent_block[self._indent_level + 1] = self._most_recent_block[self._indent_level]
+                    # self._most_recent_block[self._indent_level + 1] = self.create_block("data_changevariableby", {"Name": iterator1, "VariableId": variable_id, "Value": change}, self._most_recent_block[self._indent_level + 1])
                     # regular for loop
                     pass
                 elif iterating == "enumerate":
-                    iterator2 = tokens[3]
+                    raise NotImplementedError("Don't count on me finishing this")
                     # enumerate loop, idk if i want to support this feature
-                    pass
+                    
                 elif variable_name in self._generated_variables.keys():
+                    raise NotImplementedError("Don't count on me finishing this")
                     # iterating through a variable? hopefully a string... or a list
-                    pass
                 else:
-                    pass
+                    raise NotImplementedError("Don't count on me finishing this")
             elif variable_name is not None:
                 if variable_name not in self._generated_variables.keys():
                     if variable_name != sprite_variable:

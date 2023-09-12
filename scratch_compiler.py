@@ -342,6 +342,7 @@ class Compiler():
         self._compile_to = file_to_compile_to
 
         self._sprite_list = [i["name"] for i in self._result_file_code["targets"]]
+        self._if_statements = [] # list to iterate backwards to find correct parent. 
         self._function_variables = {}
         self._functions = {}
         self._generated_variables = {}
@@ -353,6 +354,7 @@ class Compiler():
         self._temp_id = 0
         self._line_number = 0
         self._prev_line_number = -1
+        self._indent_offset = 0
         self._indent_level = 0
 
     def is_id(self, id: str):
@@ -430,52 +432,60 @@ class Compiler():
         self._block_dict[block_id] = block_data_copy
         return block_id
     
+    def format_value_for_operator(self, value: dict, parent_id: str):
+        if value.get("VariableId", None) is not None:
+            # checks if the first value is a variable
+            value1 = [
+                3,
+                [
+                    12,
+                    value["VariableName"],
+                    value["VariableId"]
+                ]
+            ]
+        else:
+            is_argument =  self.is_parameter(value["Value"])
+            if self.is_id(value["Value"]) or is_argument:
+                # check if value exists as an argument in a function
+                if is_argument:
+                    # this should always be true honestly
+                    root = self._function_variables[self._indent_level][value["Value"]]
+                    param_type = root[1]
+                    param = root[2]
+                    value["Value"] = self.create_argument(param_type, param, parent_id)
+                    self._block_dict[value["Value"]]["shadow"] = False
+                value1 = [
+                    3,
+                    value["Value"],
+                    [
+                        4,
+                        ""
+                    ]
+                ]
+            else:
+                value1 = [
+                    1,
+                    [
+                        4,
+                        value["Value"]
+                    ]
+                ]
+        return value1
+
+    def assign_to_default_operator(self, operator_to_assign_to: str, block_id: str):
+        """Assigns value to numerical operator"""
+        self.__assign_to_operator(operator_to_assign_to, block_id, "NUM")
     
-    def assign_to_operator(self, operator_to_assign_to: str, block_id: str):
-        try:
-            if self._block_dict[operator_to_assign_to]["inputs"]["NUM1"][1][1] == block_id:
-                self._block_dict[operator_to_assign_to]["inputs"]["NUM1"] = [
-                    3,
-                    block_id,
-                    [
-                        4,
-                        ""
-                    ]
-                ]
-            elif self._block_dict[operator_to_assign_to]["inputs"]["NUM2"][1][1] == block_id:
-                self._block_dict[operator_to_assign_to]["inputs"]["NUM2"] = [
-                    3,
-                    block_id,
-                    [
-                        4,
-                        ""
-                    ]
-                ]
-        except IndexError:
-            if self._block_dict[operator_to_assign_to]["inputs"]["NUM1"][1] == block_id:
-                self._block_dict[operator_to_assign_to]["inputs"]["NUM1"] = [
-                    3,
-                    block_id,
-                    [
-                        4,
-                        ""
-                    ]
-                ]
-            elif self._block_dict[operator_to_assign_to]["inputs"]["NUM2"][1] == block_id:
-                self._block_dict[operator_to_assign_to]["inputs"]["NUM2"] = [
-                    3,
-                    block_id,
-                    [
-                        4,
-                        ""
-                    ]
-                ]
-
-
     def assign_to_boolean_operator(self, operator_to_assign_to: str, block_id: str):
-        try:
-            if self._block_dict[operator_to_assign_to]["inputs"]["OPERAND1"][1][1] == block_id:
-                self._block_dict[operator_to_assign_to]["inputs"]["OPERAND1"] = [
+        """Assigns value to boolean operator"""
+        self.__assign_to_operator(operator_to_assign_to, block_id, "OPERAND")
+    
+    def __assign_to_operator(self, operator_to_assign_to: str, block_id: str, parameter: str):
+        """This should not be used"""
+        param1 = parameter + "1"
+        param2 = parameter + "2"
+        if self._block_dict[operator_to_assign_to]["inputs"][param1][1] == block_id:
+                self._block_dict[operator_to_assign_to]["inputs"][param1] = [
                     3,
                     block_id,
                     [
@@ -483,35 +493,15 @@ class Compiler():
                         ""
                     ]
                 ]
-            elif self._block_dict[operator_to_assign_to]["inputs"]["OPERAND2"][1][1] == block_id:
-                self._block_dict[operator_to_assign_to]["inputs"]["OPERAND2"] = [
-                    3,
-                    block_id,
-                    [
-                        4,
-                        ""
-                    ]
+        elif self._block_dict[operator_to_assign_to]["inputs"][param2][1] == block_id:
+            self._block_dict[operator_to_assign_to]["inputs"][param2] = [
+                3,
+                block_id,
+                [
+                    4,
+                    ""
                 ]
-        except IndexError:
-            if self._block_dict[operator_to_assign_to]["inputs"]["OPERAND1"][1] == block_id:
-                self._block_dict[operator_to_assign_to]["inputs"]["OPERAND1"] = [
-                    3,
-                    block_id,
-                    [
-                        4,
-                        ""
-                    ]
-                ]
-            elif self._block_dict[operator_to_assign_to]["inputs"]["OPERAND2"][1] == block_id:
-                self._block_dict[operator_to_assign_to]["inputs"]["OPERAND2"] = [
-                    3,
-                    block_id,
-                    [
-                        4,
-                        ""
-                    ]
-                ]
-
+            ]
 
     
     def create_operator(self, opcode: str, values: list[dict, dict], parent: str | None, ID=None):
@@ -545,82 +535,17 @@ class Compiler():
                     self._block_dict[parent]["inputs"]["VALUE"][1] = block_id
                 except KeyError:
                     # i apologise to myself in the future for all this terrible code
-                    self.assign_to_operator(parent, block_id)
-        if values[0].get("VariableId", None) is not None:
-            value1 = [
-                3,
-                [
-                    12,
-                    values[0]["VariableName"],
-                    values[0]["VariableId"]
-                ]
-            ]
-        else:
-            is_argument =  self.is_parameter(values[0]["Value"])
-            if self.is_id(values[0]["Value"]) or is_argument:
-                if is_argument:
-                    root = self._function_variables[self._indent_level][values[0]["Value"]]
-                    param_type = root[1]
-                    param = root[2]
-                    values[0]["Value"] = self.create_argument(param_type, param, block_id) # self._function_variables[self._indent_level][values[0]["Value"]]
-                    self._block_dict[values[0]["Value"]]["shadow"] = False
-                value1 = [
-                    3,
-                    values[0]["Value"],
-                    [
-                        4,
-                        ""
-                    ]
-                ]
-            else:
-                value1 = [
-                    1,
-                    [
-                        4,
-                        values[0]["Value"]
-                    ]
-                ]
-
-        if values[1].get("VariableId", None) is not None:
-            value2 = [
-                3,
-                [
-                    12,
-                    values[1]["VariableName"],
-                    values[1]["VariableId"]
-                ]
-            ]
-        else:
-            is_argument = self.is_parameter(values[1]["Value"])
-            if self.is_id(values[1]["Value"]) or is_argument:
-                if is_argument:
-                    root = self._function_variables[self._indent_level][values[1]["Value"]]
-                    param_type = root[1]
-                    param = root[2]
-                    values[1]["Value"] = self.create_argument(param_type, param, block_id)
-                    self._block_dict[values[1]["Value"]]["shadow"] = False
-                value2 = [
-                    3,
-                    values[1]["Value"],
-                    [
-                        4,
-                        ""
-                    ]
-                ]
-            else:
-                value2 = [
-                    1,
-                    [
-                        4,
-                        values[1]["Value"]
-                    ]
-                ]
+                    self.assign_to_default_operator(parent, block_id)
+        value1 = self.format_value_for_operator(values[0], block_id)
+        value2 = self.format_value_for_operator(values[1], block_id)
         if opcode in OPERATOR_LIST:
             block_data_copy["inputs"] = {
                 "NUM1": value1,
                 "NUM2": value2
             }
         elif opcode == "operator_not":
+            # special behaviour for not gate as it only has one parameter
+            # if the two values have different values we are SCREWED
             block_data_copy["inputs"]["OPERAND"] = [
                 value1
             ]
@@ -636,39 +561,52 @@ class Compiler():
 
         return block_id
 
+
+    def parent_to(self, block_data_copy: dict, child: str, parent: str):
+        block_data_copy["topLevel"] = False
+        if parent not in self._block_dict.keys():
+            raise ValueError("Parent does not exist!")
+        
+        print(self._indent_offset, "Offset")
+
+        if self._indent_offset > 0:
+            for i in reversed(range(self._indent_offset)):
+                print("loop")
+        
+        block_data_copy["parent"] = parent
+
+        if self._block_dict[parent]["opcode"] == "control_if":
+            if self._most_recent_block.get(self._indent_level + 1, None) is None:
+                # this means that we are parenting inside of the substack
+                self._block_dict[parent]["inputs"]["SUBSTACK"][1] = child
+            else:
+                # parent to outside the substack
+                self._block_dict[parent]["next"] = child
+        elif self._block_dict[parent]["opcode"] == "control_if_else":
+            if self._most_recent_block.get(self._indent_level + 1, None) is None:
+                # this means that we are parenting inside of the substack
+                if self._block_dict[parent]["inputs"]["SUBSTACK2"][1] == "TEMP":
+                    self._block_dict[parent]["inputs"]["SUBSTACK2"][1] = child
+                else:
+                    # to be honest, we shouldn't even be reaching this stage.
+                    Warning("This should not happen (too many indents??)")
+                    self._block_dict[parent]["next"] = child
+            else:
+                # parent to outside the substack
+                self._block_dict[parent]["next"] = child
+        else:
+            self._block_dict[parent]["next"] = child
+
     
-    def create_block(self, opcode: str, block_args: dict, parent: str | None):
+    def create_block(self, opcode: str, block_args: dict, parent: str | bool):
         block_id = self.generate_id()
         block_data_copy = copy.deepcopy(BLOCK_DATA)
         block_data_copy["opcode"] = opcode
         # things might get a lil' hard coded in here >:)
-        if parent is not None:
-            block_data_copy["topLevel"] = False
-            if parent not in self._block_dict.keys():
-                raise ValueError("Parent does not exist!")
-            block_data_copy["parent"] = parent
-            if self._block_dict[parent]["opcode"] == "control_if":
-                if self._most_recent_block.get(self._indent_level + 1, None) is None:
-                    # this means that we are parenting inside of the substack
-                    self._block_dict[parent]["inputs"]["SUBSTACK"][1] = block_id
-                    
-                else:
-                    # parent to outside the substack
-                    self._block_dict[parent]["next"] = block_id
-            elif self._block_dict[parent]["opcode"] == "control_if_else":
-                if self._most_recent_block.get(self._indent_level + 1, None) is None:
-                    # this means that we are parenting inside of the substack
-                    if self._block_dict[parent]["inputs"]["SUBSTACK2"][1] == "TEMP":
-                        self._block_dict[parent]["inputs"]["SUBSTACK2"][1] = block_id
-                    else:
-                        # to be honest, we shouldn't even be reaching this stage.
-                        Warning("This should not happen (too many indents??)")
-                        self._block_dict[parent]["next"] = block_id
-                else:
-                    # parent to outside the substack
-                    self._block_dict[parent]["next"] = block_id
-            else:
-                self._block_dict[parent]["next"] = block_id
+        if parent is None:
+            parent = self._most_recent_block[self._indent_level - 1]
+        if parent is not False:
+            self.parent_to(block_data_copy, block_id, parent)
         if opcode != "procedures_prototype":
             block_data_copy["y"] = self._line_number * 25
         if opcode == "procedures_prototype":
@@ -689,8 +627,8 @@ class Compiler():
                     block_id
                 ]
             }
-            del block_data_copy["x"]
-            del block_data_copy["y"]
+            # del block_data_copy["x"]
+            # del block_data_copy["y"]
         elif opcode == "data_setvariableto":
             if block_args.get("OperatorId", None) is not None:
                 block_data_copy["inputs"]["VALUE"] = [
@@ -962,8 +900,12 @@ class Compiler():
             parent = self._most_recent_block.get(self._indent_level, None)
         # self._most_recent_block[self._indent_level + 1] = None
         self._most_recent_block[self._indent_level] = self.create_block("control_if", {"CONDITION": [2, "TEMP"]}, parent)
+        self._if_statements.append(self._most_recent_block[self._indent_level])
         self._most_recent_block[self._indent_level + 1] = self._most_recent_block[self._indent_level]
-        statement = line[2:].rstrip()[:-1]
+        if line[:2] == "if":
+            statement = line[2:].rstrip()[:-1]
+        else:
+            statement = line[4:].rstrip()[:-2]
         # we get everything between the "if" and the ":"
         # if the string we get from this is invalid, then there would've been a syntax error anyway.
         linked_list = []
@@ -992,16 +934,22 @@ class Compiler():
         sprite_index = -1 # target index
         sprite_is_studio = False
         sprite_variable = ""
+        previous_offset = self._indent_offset
 
-        self._most_recent_block = {0: self.create_block("event_whenflagclicked", {}, None)}
+        self._most_recent_block = {0: self.create_block("event_whenflagclicked", {}, False)}
 
         for line_number, v in enumerate(self._target_code):
             # getting current sprite
             v = v.replace("_", "")
             self._line_number = line_number
             self._indent_level = (len(v) - len(v.lstrip())) // 4
+            print(self._line_number + 1, self._indent_offset)
+            if self._indent_level < previous_offset:
+                self._indent_offset = 0
             if self._indent_level not in self._most_recent_block.keys():
                 self._most_recent_block[self._indent_level] = None
+
+            previous_offset = self._indent_level
 
             tokens = get_tokens(v)
             if sprite_variable == "":
@@ -1032,7 +980,7 @@ class Compiler():
             variable_name, _ = get_variable_name(v)
             if "def" in tokens:                
                 function_name = tokens[tokens.index("def") + 1]
-                self._most_recent_block[self._indent_level + 1] = self.create_block("procedures_definition", {}, None)
+                self._most_recent_block[self._indent_level + 1] = self.create_block("procedures_definition", {}, False)
                 function_id = self.create_block("procedures_prototype", {"Name": function_name}, self._most_recent_block[self._indent_level + 1])
                 param_string = get_value_in_brackets(v)[0]
                 if not param_string:
@@ -1070,6 +1018,7 @@ class Compiler():
                         2,
                         "TEMP"
                     ]
+                    self._most_recent_block[self._indent_level + 1] = None # self._most_recent_block[self._indent_level]
                     # self._most_recent_block[self._indent_level] = self._most_recent_block[self._indent_level]
                 else:
                     raise SyntaxError
@@ -1084,6 +1033,7 @@ class Compiler():
                     ]
                     # clear the possibility of parenting in the previous stack. 
                     self._most_recent_block[self._indent_level + 1] = None
+                    self._indent_offset += 1
                     self.if_statement(v)
                 else:
                     raise SyntaxError

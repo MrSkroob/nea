@@ -342,7 +342,8 @@ class Compiler():
         self._compile_to = file_to_compile_to
 
         self._sprite_list = [i["name"] for i in self._result_file_code["targets"]]
-        self._if_statements = [] # list to iterate backwards to find correct parent. 
+        self._most_recent_if = None
+        # self._if_statements = [] # list to iterate backwards to find correct parent. 
         self._function_variables = {}
         self._functions = {}
         self._generated_variables = {}
@@ -563,43 +564,60 @@ class Compiler():
 
 
     def parent_to(self, block_data_copy: dict, child: str, parent: str):
+        print("START PARENT=======")
         block_data_copy["topLevel"] = False
         if parent not in self._block_dict.keys():
+            # under normal conditions this shouldn't happen, might consider deleting.
             raise ValueError("Parent does not exist!")
-        
-        print(self._indent_offset, "Offset")
-
-        if self._indent_offset > 0:
-            for i in reversed(range(self._indent_offset)):
-                print("loop")
-        
+        parent_id = self.get_parent_from_if_stack(parent)
+        parent_block = self._block_dict[parent_id]
+        print("parent:", parent_block["opcode"], "child:", block_data_copy["opcode"])
+        print("current indent level:", self._indent_level)
         block_data_copy["parent"] = parent
 
-        if self._block_dict[parent]["opcode"] == "control_if":
-            if self._most_recent_block.get(self._indent_level + 1, None) is None:
-                # this means that we are parenting inside of the substack
-                self._block_dict[parent]["inputs"]["SUBSTACK"][1] = child
-            else:
-                # parent to outside the substack
-                self._block_dict[parent]["next"] = child
-        elif self._block_dict[parent]["opcode"] == "control_if_else":
-            if self._most_recent_block.get(self._indent_level + 1, None) is None:
-                # this means that we are parenting inside of the substack
-                if self._block_dict[parent]["inputs"]["SUBSTACK2"][1] == "TEMP":
-                    self._block_dict[parent]["inputs"]["SUBSTACK2"][1] = child
-                else:
-                    # to be honest, we shouldn't even be reaching this stage.
-                    Warning("This should not happen (too many indents??)")
-                    self._block_dict[parent]["next"] = child
-            else:
-                # parent to outside the substack
-                self._block_dict[parent]["next"] = child
+        next_indent = self._most_recent_block.get(self._indent_level + 1, None)
+        
+        if next_indent is not None:
+            next_indent_opcode = self._block_dict[next_indent]["opcode"]
+            print(next_indent)
+            print("Indent above:", next_indent_opcode)
         else:
-            self._block_dict[parent]["next"] = child
+            next_indent_opcode = None
+            print("Indent above: the void")
+
+        if parent_block["opcode"] == "control_if":
+            if next_indent != parent_id and (next_indent is None or next_indent_opcode in ["control_if", "control_if_else"]): 
+                # this means that we are parenting inside of the substack
+                parent_block["inputs"]["SUBSTACK"][1] = child
+                print("inside stack, if")
+            else:
+                # parent to outside the substack
+                parent_block["next"] = child
+                print("outside stack, if")
+        elif parent_block["opcode"] == "control_if_else":
+            if next_indent != parent_id and (next_indent is None or next_indent_opcode in ["control_if", "control_if_else"]):
+                # this means that we are parenting inside of the substack
+                if parent_block["inputs"]["SUBSTACK2"][1] == "TEMP":
+                    print("inside stack, elif")
+                    parent_block["inputs"]["SUBSTACK2"][1] = child
+                else:
+                    print("wtf?")
+                    parent_block["next"] = child
+            else:
+                # parent to outside the substack
+                print("outside stack, elif")
+                parent_block["next"] = child
+        else:
+            print("normal next")
+            parent_block["next"] = child
+        print("END PARENT====")
 
     
-    def create_block(self, opcode: str, block_args: dict, parent: str | bool):
-        block_id = self.generate_id()
+    def create_block(self, opcode: str, block_args: dict, parent: str | bool, id_to_use=None):
+        if id_to_use is None:
+            block_id = self.generate_id()
+        else:
+            block_id = id_to_use
         block_data_copy = copy.deepcopy(BLOCK_DATA)
         block_data_copy["opcode"] = opcode
         # things might get a lil' hard coded in here >:)
@@ -898,10 +916,12 @@ class Compiler():
         # indent_parent = parent
         if parent is None:
             parent = self._most_recent_block.get(self._indent_level, None)
-        # self._most_recent_block[self._indent_level + 1] = None
-        self._most_recent_block[self._indent_level] = self.create_block("control_if", {"CONDITION": [2, "TEMP"]}, parent)
-        self._if_statements.append(self._most_recent_block[self._indent_level])
-        self._most_recent_block[self._indent_level + 1] = self._most_recent_block[self._indent_level]
+        block_id = self.generate_id()
+        self.create_block("control_if", {"CONDITION": [2, "TEMP"]}, parent, block_id)
+        self._most_recent_block[self._indent_level + 1] = block_id
+        
+        # self._most_recent_block[self._indent_level + 1] = block_id
+        line = line.lstrip() 
         if line[:2] == "if":
             statement = line[2:].rstrip()[:-1]
         else:
@@ -914,15 +934,25 @@ class Compiler():
         if linked_list == []:
             raise scratch_exceptions.UnsupportedFeature("no comparators in boolean statement")
         
-        prev_id = self._most_recent_block[self._indent_level]
+        prev_id = block_id
         # prev_id = self._most_recent_block[self._indent_level]
         for evaluation in linked_list:
             if evaluation["Operator"] == ".":
                 raise scratch_exceptions.UnsupportedFeature("!= (please use == instead)")
             self.create_operator(BOOLEAN_OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
             prev_id = evaluation["Id"]
-        return self._most_recent_block[self._indent_level]
+        return block_id
         # new variation of the "self.evaluate()" method. 
+
+    def get_parent_from_if_stack(self, most_recent_if_statement: str):
+        """Method which appends a block to the elif stack"""
+        root = self._block_dict[most_recent_if_statement]
+        if root["opcode"] == "control_if" and root["inputs"]["SUBSTACK"][1] != "TEMP":
+            return most_recent_if_statement
+        elif root["opcode"] == "control_if_else" and root["inputs"]["SUBSTACK2"][1] != "TEMP":
+            return self.get_parent_from_if_stack(root["inputs"]["SUBSTACK2"][1])
+        else:
+            return most_recent_if_statement
 
     def compile(self):
         global_lists = {}
@@ -934,7 +964,6 @@ class Compiler():
         sprite_index = -1 # target index
         sprite_is_studio = False
         sprite_variable = ""
-        previous_offset = self._indent_offset
 
         self._most_recent_block = {0: self.create_block("event_whenflagclicked", {}, False)}
 
@@ -943,13 +972,8 @@ class Compiler():
             v = v.replace("_", "")
             self._line_number = line_number
             self._indent_level = (len(v) - len(v.lstrip())) // 4
-            print(self._line_number + 1, self._indent_offset)
-            if self._indent_level < previous_offset:
-                self._indent_offset = 0
             if self._indent_level not in self._most_recent_block.keys():
                 self._most_recent_block[self._indent_level] = None
-
-            previous_offset = self._indent_level
 
             tokens = get_tokens(v)
             if sprite_variable == "":
@@ -1007,9 +1031,10 @@ class Compiler():
                 # creating list of params for this specific function so we can use it in variables later.
                 self._function_variables[self._indent_level + 1] = params
             elif "if" in tokens:
-                self.if_statement(v)
+                self._most_recent_block[self._indent_level] = self.if_statement(v)
             elif "else" in tokens:
-                prev_op_code = self._block_dict[self._most_recent_block[self._indent_level]]["opcode"]
+                prev_id = self.get_parent_from_if_stack(self._most_recent_block[self._indent_level])
+                prev_op_code = self._block_dict[prev_id]["opcode"]
                 if prev_op_code == "control_if":
                     # we literally 'morph' the previous if statement into an if block
                     self._block_dict[self._most_recent_block[self._indent_level]]["opcode"] = "control_if_else"
@@ -1018,23 +1043,28 @@ class Compiler():
                         2,
                         "TEMP"
                     ]
-                    self._most_recent_block[self._indent_level + 1] = None # self._most_recent_block[self._indent_level]
+                    self._most_recent_block[self._indent_level + 1] = prev_id
                     # self._most_recent_block[self._indent_level] = self._most_recent_block[self._indent_level]
                 else:
                     raise SyntaxError
                 pass
             elif "elif" in tokens:
-                prev_op_code = self._block_dict[self._most_recent_block[self._indent_level]]["opcode"]
+                id = self.get_parent_from_if_stack(self._most_recent_block[self._indent_level])
+                prev_op_code = self._block_dict[id]["opcode"]
                 if prev_op_code == "control_if":
-                    self._block_dict[self._most_recent_block[self._indent_level]]["opcode"] = "control_if_else"
-                    self._block_dict[self._most_recent_block[self._indent_level]]["inputs"]["SUBSTACK2"] = [
+                    self._block_dict[id]["opcode"] = "control_if_else"
+                    self._block_dict[id]["inputs"]["SUBSTACK2"] = [
                         2,
                         "TEMP"
                     ]
-                    # clear the possibility of parenting in the previous stack. 
-                    self._most_recent_block[self._indent_level + 1] = None
-                    self._indent_offset += 1
-                    self.if_statement(v)
+                    self.if_statement(v, id)
+                elif prev_op_code == "control_if_else":
+                    self._block_dict[id]["opcode"] = "control_if_else"
+                    self._block_dict[id]["inputs"]["SUBSTACK2"] = [
+                        2,
+                        "TEMP"
+                    ]
+                    self.if_statement(v, id)
                 else:
                     raise SyntaxError
                 pass

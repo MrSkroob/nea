@@ -7,8 +7,13 @@ yes = "True"
 
 if yes == "True":
     variable_sam = "yay"
+    if yes == "why":
+        uh = ":)"
 elif yes == "False":
     variable_sam = "nay"
+    hello_world = "Hello"
+elif yes == "Not False":
+    uh = "?????"
 
 finished = "True"
 

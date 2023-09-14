@@ -568,7 +568,7 @@ class Compiler():
         block_data_copy["topLevel"] = False
         parent_block = self._block_dict[parent]
         print("parent:", parent_block["opcode"], "child:", block_data_copy["opcode"])
-        print("current indent level:", self._indent_level)
+        print("current indent level:", self._indent_level, "offset:", self._if_layers)
         block_data_copy["parent"] = parent
 
         next_indent = self._most_recent_block.get(self._indent_level + 1, None)
@@ -599,7 +599,9 @@ class Compiler():
             else:
                 # parent to outside the substack
                 print("outside stack, elif")
-                parent_block["next"] = child
+                # parent_block["next"] = child
+                block_data_copy["parent"] = self._most_recent_if[self._indent_level]
+                self._block_dict[self._most_recent_if[self._indent_level]]["next"] = child
         else:
             print("normal next")
             self._if_layers = self._indent_level

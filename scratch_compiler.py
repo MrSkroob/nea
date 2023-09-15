@@ -9,92 +9,9 @@ import zipfile
 import re
 import copy
 from dependencies import scratch_exceptions
+from dependencies.scratch_compiler_regex_utils import *
 
 # useful regexes
-BETWEEN_BRACKETS = r"(?<=\()(.*?)(?=\))"
-
-LEFT_ANY_OPERATOR = r".+?(?=\S{1}=)"
-
-LEFT_OPERATOR_EQUAL = r".+?(?=\=)"
-LEFT_OPERATOR_PLUS = r".+?(?=\+=)"
-LEFT_OPERATOR_MINUS = r".+?(?=\-=)"
-LEFT_OPERATOR_MUL = r".+?(?=\*=)"
-LEFT_OPERATOR_DIV = r".+?(?=\/=)"
-LEFT_OPERATOR_MOD = r".+?(?=\%=)"
-
-RIGHT_OPERATOR_EQUAL = r"(?<=\=).*"
-RIGHT_OPERATOR_PLUS = r"(?<=\+=).*"
-RIGHT_OPERATOR_MINUS = r"(?<=\-=).*"
-RIGHT_OPERATOR_MUL = r"(?<=\*=).*"
-RIGHT_OPERATOR_DIV = r"(?<=\/=).*"
-RIGHT_OPERATOR_MOD = r"(?<=\%=).*"
-
-GET_LEFT_SIDE = [
-    LEFT_OPERATOR_PLUS,
-    LEFT_OPERATOR_MINUS,
-    LEFT_OPERATOR_MUL,
-    LEFT_OPERATOR_DIV,
-    LEFT_OPERATOR_MOD,
-    LEFT_OPERATOR_EQUAL # this is ordered at the back so we check other operators first. 
-                        # not doing this will make += match to =, resulting in the variable name being
-                        # "variable_1 +"
-]
-
-GET_RIGHT_SIDE = [
-    RIGHT_OPERATOR_PLUS,
-    RIGHT_OPERATOR_MINUS,
-    RIGHT_OPERATOR_MUL,
-    RIGHT_OPERATOR_DIV,
-    RIGHT_OPERATOR_MOD,
-    RIGHT_OPERATOR_EQUAL
-]
-
-# regexes for operators without =
-LEFT_COMPARE = r".+?(?=\==)"
-LEFT_PLUS = r".+?(?=\+)"
-LEFT_MINUS = r".+?(?=\-)"
-LEFT_MUL = r".+?(?=\*)"
-LEFT_DIV = r".+?(?=\/)"
-LEFT_MOD = r".+?(?=\%)"
-
-RIGHT_COMPARE = r"(?<=\==).*"
-RIGHT_PLUS = r"(?<=\+).*"
-RIGHT_MINUS = r"(?<=\-).*"
-RIGHT_MUL = r"(?<=\*).*"
-RIGHT_DIV = r"(?<=\/).*"
-RIGHT_MOD = r"(?<=\%).*"
-
-LEFT_OPERATOR = [
-    LEFT_COMPARE,
-    LEFT_PLUS,
-    LEFT_MINUS,
-    LEFT_MUL,
-    LEFT_DIV,
-    LEFT_MOD,
-]
-
-RIGHT_OPERATOR = [
-    RIGHT_COMPARE,
-    RIGHT_PLUS,
-    RIGHT_MINUS,
-    RIGHT_MUL,
-    RIGHT_DIV,
-    RIGHT_MOD,
-]
-
-# scratch block scaffolding
-KEYWORDS = [
-    "if",
-    "else",
-    "def",
-    "not",
-    "or",
-    "and",
-    "True",
-    "False"
-]
-
-
 TYPES = {
     "bool": "%b",
     "int": "%s",
@@ -168,23 +85,7 @@ BOOLEAN_ORDER = [
     "|"
 ]
 
-
-OPERATOR_TYPE = {
-    "+=": "+",
-    "-=": "-",
-    "*=": "*",
-    "/=": "/",
-    "%=": "%",
-
-    "+": "+",
-    "-": "-",
-    "*": "*",
-    "/": "/",
-    "%": "%",
-    "=": "="
-}
-
-
+# operators that combine 2 operators together
 COMBINED_OPERATORS = {
     "+=": "+",
     "-=": "-",
@@ -195,9 +96,9 @@ COMBINED_OPERATORS = {
     # "**=": "**" scratch doesn't natively have indices multiplication yet
 }
 
-
+# bodmas order
 ORDER = [
-    # highest top, lowest bottom
+    # highest precedence, lowest bottom
     "=",
     "-",
     "+",
@@ -221,20 +122,13 @@ REVERSED_ORDER = [
 ]
 
 
-ARGUMENT_CODES = {
-    str: "10",
-    float: "4",
-    int: "4"
-}
-
-
 ARGUMENT_TYPES = {
     "bool": "argument_reporter_boolean",
     "int": "argument_reporter_string_number",
     "str": "argument_reporter_string_number"
 }
 
-
+# scratch block scaffolding
 BLOCK_DATA = {
     "opcode": "",
     "next": None, # next block, default None
@@ -274,63 +168,6 @@ def save_data(file_name: str, data: dict):
         json_dumped = json.dumps(data, ensure_ascii=True)
         f.writestr("project.json", data=json_dumped)
         f.testzip()
-
-
-def get_tokens(line: str):
-    expression_bytes = line.strip().encode()
-    tokens = [i.string for i in tokenize.tokenize(BytesIO(expression_bytes).readline)]
-    return tokens[1:]
-
-
-def search(line: str, expression: str):
-    match = re.search(expression, line)
-    if match is not None:
-        match = match.group().strip()
-    return match
-
-
-def get_variable_name(line: str):
-    for i in GET_LEFT_SIDE:
-        match = search(line, i)
-        expression = i
-        if match is not None: break
-    return match, expression
-
-
-def get_left_operator(line: str):
-    for i in LEFT_OPERATOR:
-        match = search(line, i)
-        expression = i
-        if match is not None: break
-    return match, expression
-
-
-def get_right_operator(line: str):
-    for i in RIGHT_OPERATOR:
-        match = search(line, i)
-        expression = i
-        if match is not None: break
-    return match, expression
-
-def get_operators(line: str):
-    operators = []
-    for i in OPERATOR_TYPE:
-        if i in line:
-            operators.append(i)
-    return operators
-
-
-def get_variable_value(line: str):
-    for i in GET_RIGHT_SIDE:
-        match = search(line, i)
-        expression = i
-        if match is not None: break
-    return match, expression
-
-
-def get_value_in_brackets(line: str):
-    result = re.findall(BETWEEN_BRACKETS, line)
-    return result
 
 
 class Compiler():
@@ -434,6 +271,8 @@ class Compiler():
         return block_id
     
     def format_value_for_operator(self, value: dict, parent_id: str):
+        """Formats the given value into something that can be read by Scratch in the table
+        within an operator"""
         if value.get("VariableId", None) is not None:
             # checks if the first value is a variable
             value1 = [
@@ -504,7 +343,25 @@ class Compiler():
                 ]
             ]
 
-    
+    def operator_parent_to(self, block_data_copy: dict, child: str, parent: str):
+        block_data_copy["parent"] = parent
+        if self._block_dict[parent]["opcode"] == "control_if":
+            self._block_dict[parent]["inputs"]["CONDITION"][1] = child
+        elif self._block_dict[parent]["opcode"] == "operator_not":
+            self._block_dict[parent]["inputs"]["OPERAND"] = [
+                2,
+                child
+            ]
+        elif self._block_dict[parent]["opcode"] in BOOLEAN_OPERATOR_LIST:
+            # check if operator is a boolean operator
+            self.assign_to_boolean_operator(parent, child)
+        else:
+            # operator is NOT a boolean operator
+            try:
+                self._block_dict[parent]["inputs"]["VALUE"][1] = child
+            except KeyError:
+                self.assign_to_default_operator(parent, child)
+
     def create_operator(self, opcode: str, values: list[dict, dict], parent: str | None, ID=None):
         """Creates an operator block given the parameters"""
         if ID is None:
@@ -519,24 +376,25 @@ class Compiler():
         if self._line_number not in self._function_variables.keys():
             self._function_variables[self._line_number] = []
         if parent is not None:
-            block_data_copy["parent"] = parent
-            if self._block_dict[parent]["opcode"] == "control_if":
-                self._block_dict[parent]["inputs"]["CONDITION"][1] = block_id
-            elif self._block_dict[parent]["opcode"] == "operator_not":
-                self._block_dict[parent]["inputs"]["OPERAND"] = [
-                    2,
-                    block_id
-                ]
-            elif self._block_dict[parent]["opcode"] in BOOLEAN_OPERATOR_LIST:
-                # check if operator is a boolean operator
-                self.assign_to_boolean_operator(parent, block_id)
-            else:
-                # operator is NOT a boolean operator
-                try:
-                    self._block_dict[parent]["inputs"]["VALUE"][1] = block_id
-                except KeyError:
-                    # i apologise to myself in the future for all this terrible code
-                    self.assign_to_default_operator(parent, block_id)
+            self.operator_parent_to(block_data_copy, block_id, parent)
+            # block_data_copy["parent"] = parent
+            # if self._block_dict[parent]["opcode"] == "control_if":
+            #     self._block_dict[parent]["inputs"]["CONDITION"][1] = block_id
+            # elif self._block_dict[parent]["opcode"] == "operator_not":
+            #     self._block_dict[parent]["inputs"]["OPERAND"] = [
+            #         2,
+            #         block_id
+            #     ]
+            # elif self._block_dict[parent]["opcode"] in BOOLEAN_OPERATOR_LIST:
+            #     # check if operator is a boolean operator
+            #     self.assign_to_boolean_operator(parent, block_id)
+            # else:
+            #     # operator is NOT a boolean operator
+            #     try:
+            #         self._block_dict[parent]["inputs"]["VALUE"][1] = block_id
+            #     except KeyError:
+            #         # i apologise to myself in the future for all this terrible code
+            #         self.assign_to_default_operator(parent, block_id)
         value1 = self.format_value_for_operator(values[0], block_id)
         value2 = self.format_value_for_operator(values[1], block_id)
         if opcode in OPERATOR_LIST:
@@ -562,13 +420,10 @@ class Compiler():
 
         return block_id
 
-
-    def parent_to(self, block_data_copy: dict, block_args: dict, child: str, parent: str):
-        print("START PARENT=======")
+    def __parent_to(self, block_data_copy: dict, block_args: dict, child: str, parent: str):
+        """Parents the given block to its parent, should not be used outside of .create_block"""
         block_data_copy["topLevel"] = False
         parent_block = self._block_dict[parent]
-        print("parent:", parent_block["opcode"], "child:", block_data_copy["opcode"])
-        print("current indent level:", self._indent_level, "offset:", self._if_layers)
         block_data_copy["parent"] = parent
 
         next_indent = self._most_recent_block.get(self._indent_level + 1, None)
@@ -578,38 +433,30 @@ class Compiler():
             if previous_indent == parent or next_indent is None: 
                 # this means that we are parenting inside of the substack
                 parent_block["inputs"]["SUBSTACK"][1] = child
-                print("inside stack, if")
             else:
                 # parent to outside the substack
                 block_data_copy["parent"] = self._most_recent_if[self._indent_level]
                 self._block_dict[self._most_recent_if[self._indent_level]]["next"] = child
-                print("outside stack, if")
         elif parent_block["opcode"] == "control_if_else":
             if block_args.get("PARENT_TO_ELIF", None) is not None:
-                print("inside, forced, elif")
                 parent_block["inputs"]["SUBSTACK2"][1] = child
             elif previous_indent == parent or next_indent is None:
                 # this means that we are parenting inside of the substack
                 if parent_block["inputs"]["SUBSTACK2"][1] == "TEMP":
-                    print("inside, elif")
                     parent_block["inputs"]["SUBSTACK2"][1] = child
                 else:
-                    print("wtf?")
                     parent_block["next"] = child
             else:
                 # parent to outside the substack
-                print("outside stack, elif")
                 # parent_block["next"] = child
                 block_data_copy["parent"] = self._most_recent_if[self._indent_level]
                 self._block_dict[self._most_recent_if[self._indent_level]]["next"] = child
         else:
-            print("normal next")
             self._if_layers = self._indent_level
             parent_block["next"] = child
-        print("END PARENT====")
-
-    
+ 
     def create_block(self, opcode: str, block_args: dict, parent: str | bool, id_to_use=None):
+        """Creates a block in a format that Scratch can read"""
         if id_to_use is None:
             block_id = self.generate_id()
         else:
@@ -620,7 +467,7 @@ class Compiler():
         if parent is None:
             parent = self._most_recent_block[self._indent_level - 1]
         if parent is not False:
-            self.parent_to(block_data_copy, block_args, block_id, parent)
+            self.__parent_to(block_data_copy, block_args, block_id, parent)
         if opcode != "procedures_prototype":
             block_data_copy["y"] = self._line_number * 25
         if opcode == "procedures_prototype":
@@ -691,16 +538,15 @@ class Compiler():
         self._block_dict[block_id] = block_data_copy
         return block_id
 
-
     def get_variable_table_for_operator(self, potential_variable_name: str):
-        """Returns a dictionary with the attributes filled out"""
+        """Returns a dictionary with the attributes filled out, which can be used by the
+        create_operator method"""
         if potential_variable_name in self._generated_variables.keys():
             return {"VariableName": potential_variable_name, "VariableId": self._generated_variables[potential_variable_name]}
         else:
             potential_variable_name = potential_variable_name.replace("'", "")
             potential_variable_name = potential_variable_name.replace('"', "")
             return {"Value": potential_variable_name}
-
 
     def convert_expression(self, line: str):
         """Formats the expression to have no whitespace"""
@@ -717,13 +563,15 @@ class Compiler():
     
     def convert_expression_boolean(self, line: str):
         """Formats the expression to have no whitespace
-        and replaces boolean operators with a more processable type"""
+        and replaces boolean operators with a more processable type used by
+        evaluate_boolean"""
         line = "".join(line.split())
         for i in BOOLEAN_SUB:
             line = line.replace(i, BOOLEAN_SUB[i])
         return line     
 
     def get_operator(self, line: str, operator_order: list[str]):
+        """Returns the first operator it finds (left to right)"""
         operator = ""
         index = -1
         for i in operator_order:
@@ -734,6 +582,8 @@ class Compiler():
         return operator, index
 
     def evaluate(self, line: str, linked_list: list[dict]):
+        """Updates the linked_list given with a list of parameters. This list reversed can be used
+        repeatedly by create_operator to correctly follow bodmas"""
         expression = self.convert_expression(line)
         # expression = expression.replace("()", "") not sure if this line is needed.
         operator, index = self.get_operator(expression, REVERSED_ORDER)
@@ -814,8 +664,8 @@ class Compiler():
 
         return expression
     
-
     def evaluate_boolean(self, line: str, linked_list: list[dict]):
+        """Similar to evaluate, but for boolean expressions only"""
         expression = self.convert_expression_boolean(line)
         operator, index = self.get_operator(expression, BOOLEAN_ORDER)
         expression_to_use = expression
@@ -906,9 +756,43 @@ class Compiler():
             self.evaluate_boolean(expression, linked_list)
 
         return expression
-    
+
+    def generate_evaluation(self, line: str):
+        linked_list = []
+        # this code generates a list which we can use to iterate through to create 
+        # the string of operators in the correct order. 
+        self.evaluate(line, linked_list)
+        if linked_list == []:
+            # if the list is empty, then that means the statement is a simple 
+            # variable = variable 
+            # or
+            # variable = number
+
+            formatted = self.convert_expression(line)
+
+            return formatted, False
+        else:
+            # reverse, because we want to do lowest priority first. Scratch does top to bottom, list gives us bottom to top, so we want lowest
+            # priority at the bottom.
+            linked_list.reverse()
+
+            prev_id = None
+            # we have to parent this to something, right?
+
+            root_operator = None
+
+            for evaluation in linked_list:
+                # iterate through, and simply create an operator using the data provided. 
+                if prev_id is None:
+                    root_operator = evaluation["Id"]
+                self.create_operator(OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
+                prev_id = evaluation["Id"]
+            
+            return root_operator, True
 
     def morph_if_to_elif(self, if_id: str):
+        """Morphs an existing control_if into a control_if_else
+        which is used by create_block to parent to SUBSTACK2 if needed"""
         if_statement = self._block_dict[if_id]
         if_statement["opcode"] = "control_if_else"
         if_statement["inputs"]["SUBSTACK2"] = [
@@ -917,17 +801,13 @@ class Compiler():
         ]
         self._most_recent_block[self._indent_level + 1] = if_id
 
-
     def if_statement(self, line: str, fake_indent: bool = None):
-        # self._most_recent_block[self._indent_level + 1] = None
-        # indent_parent = parent
         parent = self._most_recent_block[self._indent_level]
         block_id = self.generate_id()
         self.create_block("control_if", {"CONDITION": [2, "TEMP"], "PARENT_TO_ELIF": fake_indent}, parent, block_id)
-        self._most_recent_block[self._indent_level + 1] = block_id
-        self._most_recent_block[self._indent_level] = block_id
+        self._most_recent_block[self._indent_level + 1] = block_id # this is for blocks inside the stack to parent to.
+        self._most_recent_block[self._indent_level] = block_id # this is for blocks outside of the stack to parent to.
         
-        # self._most_recent_block[self._indent_level + 1] = block_id
         line = line.lstrip() 
         if line[:2] == "if":
             statement = line[2:].rstrip()[:-1]
@@ -937,30 +817,42 @@ class Compiler():
         # if the string we get from this is invalid, then there would've been a syntax error anyway.
         linked_list = []
         self.evaluate_boolean(statement, linked_list)
+        # please note that while it is fine to do in python to do this:
+        # if 1 + 1 == 2:
+        # and scratch can do this too, i have deemed it for my mental sanity to not implement this.
+        # please try: 
+        # one_plus_one = 1 + 1
+        # if one_plus_one == 2:
+        # instead.
         linked_list.reverse()
         if linked_list == []:
             raise scratch_exceptions.UnsupportedFeature("no comparators in boolean statement")
         
         prev_id = block_id
-        # prev_id = self._most_recent_block[self._indent_level]
         for evaluation in linked_list:
             if evaluation["Operator"] == ".":
                 raise scratch_exceptions.UnsupportedFeature("!= (please use == instead)")
-            self.create_operator(BOOLEAN_OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
+            
+            root_operator_1, success_1 = self.generate_evaluation(evaluation["Value"][0]["Value"])
+            if success_1:
+                evaluation["Value"][0] = self.get_variable_table_for_operator(root_operator_1)
+
+            root_operator_2, success_2 = self.generate_evaluation(evaluation["Value"][1]["Value"])
+            if success_2:
+                evaluation["Value"][1] = self.get_variable_table_for_operator(root_operator_2)
+
+
+            parent = self.create_operator(BOOLEAN_OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
             prev_id = evaluation["Id"]
+
+            if success_1:
+                self.operator_parent_to(self._block_dict[root_operator_1], root_operator_1, parent)
+            if success_2:
+                self.operator_parent_to(self._block_dict[root_operator_2], root_operator_2, parent)
+
+            
         return block_id
-        # new variation of the "self.evaluate()" method. 
-
-    def get_parent_from_if_stack(self, most_recent_if_statement: str):
-        """Method which appends a block to the elif stack"""
-        root = self._block_dict[most_recent_if_statement]
-        if root["opcode"] == "control_if" and root["inputs"]["SUBSTACK"][1] != "TEMP":
-            return most_recent_if_statement
-        elif root["opcode"] == "control_if_else" and root["inputs"]["SUBSTACK2"][1] != "TEMP":
-            return self.get_parent_from_if_stack(root["inputs"]["SUBSTACK2"][1])
-        else:
-            return most_recent_if_statement
-
+    
     def compile(self):
         global_lists = {}
         global_variables = {} # store in studio
@@ -1050,7 +942,21 @@ class Compiler():
                 self._if_layers += 1
                 self.if_statement(v, True)
             elif "for" in tokens:
-                pass
+                # we anchor at "in"
+                anchor = tokens.index("in")
+                in_brackets = get_value_in_brackets(v)
+                if tokens[anchor + 1] == "range":
+                    # regular for loop
+                    loop1 = tokens[anchor - 1]
+                    pass
+                elif tokens[anchor + 1] == "enumerate":
+                    # enumerate loop
+                    loop1 = tokens[anchor - 2]
+                    loop2 = tokens[anchor - 1]
+                    pass
+                else:
+                    # likely iterating through a list or variable
+                    pass
             elif variable_name is not None:
                 if variable_name not in self._generated_variables.keys():
                     if variable_name != sprite_variable:
@@ -1072,21 +978,12 @@ class Compiler():
                                 local_variables[variable_id] = [variable_name, 0]
                         self._generated_variables[variable_name] = variable_id
                 if variable_name != sprite_variable:
-                    linked_list = []
-                    # this code generates a list which we can use to iterate through to create 
-                    # the string of operators in the correct order. 
-                    self.evaluate(v, linked_list)
-                    if linked_list == []:
-                        # if the list is empty, then that means the statement is a simple 
-                        # variable = variable 
-                        # or
-                        # variable = number
-                        formatted = self.convert_expression(v)
-                        _, index = self.get_operator(formatted, ORDER)
-
+                    root_operator, success = self.generate_evaluation(v)
+                    if success is False:
+                        _, index = self.get_operator(root_operator, ORDER)
                         if index != -1:
                             # honestly if this isn't true, then there should be a syntax error anyway.
-                            right = formatted[index + 1:]
+                            right = root_operator[index + 1:]
 
                             if right in self._function_variables.keys():
                                 pass
@@ -1107,18 +1004,59 @@ class Compiler():
                                 self._block_dict[argument_id]["shadow"] = False
                             else:
                                 self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", value, self._most_recent_block[self._indent_level])
+                        else:
+                            raise scratch_exceptions.Panic()
                     else:
                         self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": self._generated_variables[variable_name], "OperatorId": "TEMP"}, self._most_recent_block[self._indent_level])
-                        # reverse, because we want to do lowest priority first. Scratch does top to bottom, list gives us bottom to top, so we want lowest
-                        # priority at the bottom.
-                        linked_list.reverse()
+                        print(self._block_dict[root_operator])
+                        self.operator_parent_to(self._block_dict[root_operator], root_operator, self._most_recent_block[self._indent_level])
+                    # linked_list = []
+                    # # this code generates a list which we can use to iterate through to create 
+                    # # the string of operators in the correct order. 
+                    # self.evaluate(v, linked_list)
+                    # if linked_list == []:
+                    #     # if the list is empty, then that means the statement is a simple 
+                    #     # variable = variable 
+                    #     # or
+                    #     # variable = number
+                    #     formatted = self.convert_expression(v)
+                    #     _, index = self.get_operator(formatted, ORDER)
 
-                        prev_id = self._most_recent_block[self._indent_level]
-                        # we have to parent this to something, right?
-                        for evaluation in linked_list:
-                            # iterate through, and simply create an operator using the data provided. 
-                            self.create_operator(OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
-                            prev_id = evaluation["Id"]
+                    #     if index != -1:
+                    #         # honestly if this isn't true, then there should be a syntax error anyway.
+                    #         right = formatted[index + 1:]
+
+                    #         if right in self._function_variables.keys():
+                    #             pass
+                    #         value = self.get_variable_table_for_operator(right)
+                    #         value["Name"] = variable_name
+                    #         if self.is_parameter(value["Value"]):
+                    #             # we check if the "value" is part of the function parameter
+                    #             root = self._function_variables[self._indent_level][value["Value"]]
+                    #             # pre-generate id
+                    #             id_to_use = self.generate_id()
+                    #             value["Value"] = id_to_use
+                    #             value["OperatorId"] = id_to_use
+                    #             self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", value, self._most_recent_block[self._indent_level])
+                                
+                    #             # because of the way I coded this, we have to parent the argument after creating the block. 
+                    #             # makes sense though, you can't have children if the parent doesn't exist.
+                    #             argument_id = self.create_argument(root[1], root[2], self._most_recent_block[self._indent_level], id_to_use)
+                    #             self._block_dict[argument_id]["shadow"] = False
+                    #         else:
+                    #             self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", value, self._most_recent_block[self._indent_level])
+                    # else:
+                    #     self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": variable_name, "VariableId": self._generated_variables[variable_name], "OperatorId": "TEMP"}, self._most_recent_block[self._indent_level])
+                    #     # reverse, because we want to do lowest priority first. Scratch does top to bottom, list gives us bottom to top, so we want lowest
+                    #     # priority at the bottom.
+                    #     linked_list.reverse()
+
+                    #     prev_id = self._most_recent_block[self._indent_level]
+                    #     # we have to parent this to something, right?
+                    #     for evaluation in linked_list:
+                    #         # iterate through, and simply create an operator using the data provided. 
+                    #         self.create_operator(OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
+                    #         prev_id = evaluation["Id"]
 
             self._prev_line_number = self._line_number
 

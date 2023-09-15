@@ -51,3 +51,8 @@ class InvalidArgumentType(Exception):
         message = f"Scratch limitation - scratch does not support the type '{arg_type}'"
         super().__init__(message)
         
+
+class Panic(Exception):
+    def __init__(self) -> None:
+        message = "Something went wrong. It's not you, it's me."
+        super().__init__(message)

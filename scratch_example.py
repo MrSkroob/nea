@@ -3,9 +3,12 @@ from dependencies import scratch_project, scratch_enums
 
 sprite = scratch_project.Sprite("Sprite1")
 
-yes = 0
+yes = True
 
-var = 1+1 * 4 / 3
+var = 8
 
-if 1+1 * 4 / 3 == 8 / 4 * 3:
+if 1+1 * 4 / 3 == var * 3:
+    pass
+
+for i in range(4 + 3):
     pass

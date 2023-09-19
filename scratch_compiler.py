@@ -150,13 +150,6 @@ def load_python_file(file_name: str) -> list[str]:
     """Returns the contents of a text/python file"""
     with open(file_name, "r") as f:
         return f.readlines()
-
-
-def get_block_opcode() -> dict:
-    """Returns the dictionary of all attributes that a block has"""
-    with open("dependencies/scratch_block_data.json") as f:
-        json_file = json.load(f)
-    return json_file
     
 
 def save_data(file_name: str, data: dict):
@@ -582,7 +575,6 @@ class Compiler():
                     self._most_recent_block[self._indent_level] = self.create_block(opcode, value, parent)
             else:
                 self._most_recent_block[self._indent_level] = self.create_block(opcode, {"Name": variable_name, "VariableId": variable_id, "Value": root_operator}, parent)
-                print(index)
                 # raise scratch_exceptions.Panic()
         else:
             self._most_recent_block[self._indent_level] = self.create_block(opcode, {"Name": variable_name, "VariableId": variable_id, "OperatorId": "TEMP"}, parent)
@@ -1026,16 +1018,24 @@ class Compiler():
                         step = in_brackets[2]
 
                     root_operator, success = self.generate_evaluation(f"({end}) - ({start})")
-                    # success should always be true here...
+                    # success should always be true here. if not, wellllllll
+                    if not success:
+                        raise SyntaxError("range() is empty")
 
                     variable_id = self.generate_id()
+
+                    # append the generated variable to the variable list
                     self._generated_variables[loop1] = variable_id 
                     local_variables[variable_id] = [loop1, start + 1]
+
+                    # since scratch only "repeats" we have to emulate this behaviour by literally creating an "i" variable (or whatever the user names it)
                     self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Value": start, "VariableId": variable_id, "Name": loop1}, self._most_recent_block[self._indent_level])
                     self._most_recent_block[self._indent_level] = self.create_block("control_repeat", {"TIMES": None}, self._most_recent_block[self._indent_level])
                     self._most_recent_block[self._indent_level + 1] = self._most_recent_block[self._indent_level]
+                    # we evaluate the repeats and append it to the control_repeat
                     self.operator_parent_to(self._block_dict[root_operator], root_operator, self._most_recent_block[self._indent_level])
                     self._indent_level += 1
+                    # evaluate the "step"
                     self.create_variable_add_block(str(step), variable_id, "changevariableby", self._most_recent_block[self._indent_level])
                     self._indent_level -= 1
                 elif tokens[anchor + 1] == "enumerate":
@@ -1067,6 +1067,7 @@ class Compiler():
                                 local_variables[variable_id] = [variable_name, 0]
                         self._generated_variables[variable_name] = variable_id
                 if variable_name != sprite_variable:
+                    variable_id = self._generated_variables[variable_name]
                     self.create_variable_add_block(v, variable_id, "setvariableto", self._most_recent_block[self._indent_level])
 
             self._prev_line_number = self._line_number
@@ -1096,10 +1097,9 @@ def main():
     # scratch_file_name = input("Scratch file to compile to: ")
     scratch_file_name = "Guinnea Pig.sb3"
 
-    # opcode_data = get_block_opcode()
     compiler = Compiler(python_file_name, scratch_file_name)
     compiler.compile()
     # translate(python_code, scratch_file_name, project_json)
-    
+
 
 main()

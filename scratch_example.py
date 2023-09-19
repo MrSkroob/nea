@@ -11,4 +11,4 @@ if 1+1 * 4 / 3 == var * 3:
     pass
 
 for i in range(4 + 3):
-    pass
+    var += 1

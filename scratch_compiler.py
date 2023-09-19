@@ -1,6 +1,5 @@
 # testing for basic idea of adding blocks to a scratch project.
 # this one is for a basic block.
-import math
 import json
 import zipfile
 import re
@@ -414,6 +413,8 @@ class Compiler():
         next_indent = self._most_recent_block.get(self._indent_level + 1, None)
         previous_indent = self._most_recent_block.get(self._indent_level - 1, None)
 
+        print("PARENT", parent_block["opcode"])
+
         if parent_block["opcode"] == "control_if":
             if previous_indent == parent or next_indent is None: 
                 # this means that we are parenting inside of the substack
@@ -721,11 +722,6 @@ class Compiler():
         operator, index = self.get_operator(expression, BOOLEAN_ORDER)
         expression_to_use = expression
 
-        if expression_to_use == "True":
-            raise scratch_exceptions.UnsupportedFeature("Bare booleans. (Try doing 1 == 1 instead)")
-        elif expression_to_use == "False":
-            raise scratch_exceptions.UnsupportedFeature("Bare booleans. (Try doing 1 != 1 instead)")
-
         if index == -1:
             return line
         
@@ -836,7 +832,6 @@ class Compiler():
                 # iterate through, and simply create an operator using the data provided. 
                 if prev_id is None:
                     root_operator = evaluation["Id"]
-                print(evaluation)
                 self.create_operator(OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
                 prev_id = evaluation["Id"]
             
@@ -864,7 +859,7 @@ class Compiler():
         if line[:2] == "if":
             statement = line[2:].rstrip()[:-1]
         else:
-            statement = line[4:].rstrip()[:-2]
+            statement = line[4:].rstrip()[:-1]
         # we get everything between the "if" and the ":"
         # if the string we get from this is invalid, then there would've been a syntax error anyway.
         linked_list = []
@@ -884,14 +879,17 @@ class Compiler():
         for evaluation in linked_list:
             if evaluation["Operator"] == ".":
                 raise scratch_exceptions.UnsupportedFeature("!= (please use == instead)")
-            
-            root_operator_1, success_1 = self.generate_evaluation(evaluation["Value"][0]["Value"])
-            if success_1:
-                evaluation["Value"][0] = self.get_variable_table_for_operator(root_operator_1)
+            success_1 = False
+            success_2 = False
+            if evaluation["Value"][0].get("Value", None) is not None:
+                root_operator_1, success_1 = self.generate_evaluation(evaluation["Value"][0]["Value"])
+                if success_1:
+                    evaluation["Value"][0] = self.get_variable_table_for_operator(root_operator_1)
 
-            root_operator_2, success_2 = self.generate_evaluation(evaluation["Value"][1]["Value"])
-            if success_2:
-                evaluation["Value"][1] = self.get_variable_table_for_operator(root_operator_2)
+            if evaluation["Value"][1].get("Value", None) is not None:
+                root_operator_2, success_2 = self.generate_evaluation(evaluation["Value"][1]["Value"])
+                if success_2:
+                    evaluation["Value"][1] = self.get_variable_table_for_operator(root_operator_2)
 
 
             parent = self.create_operator(BOOLEAN_OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
@@ -955,38 +953,42 @@ class Compiler():
             variable_name, _ = get_variable_name(v)
             if "def" in tokens:                
                 function_name = tokens[tokens.index("def") + 1]
+                # because I'm not expecting for there to be children oustide the inner stack for definitions, 
+                # i don't do self._most_recent_block[self._indent_level]
                 self._most_recent_block[self._indent_level + 1] = self.create_block("procedures_definition", {}, False)
                 function_id = self.create_block("procedures_prototype", {"Name": function_name}, self._most_recent_block[self._indent_level + 1])
                 param_string = get_value_in_brackets(v)[0]
                 if not param_string:
                     param_list = []
                 else:
+                    # generate a tuple of all parameters. 
                     param_list = (''.join(param_string.split())).split(",")
                 params = {}
 
                 if len(param_list) > 0 and param_list[0] != '':
                     for i in param_list:
+                        # we split each param into a param_name, and param_type
                         split_param = i.split(":")
-                        param = split_param[0]
+                        param_name = split_param[0]
                         param_type = split_param[1]
 
-                        try:
-                            TYPES[param_type]
-                        except KeyError:
+                        if TYPES.get(param_type, None) is None:
+                            # scratch only supports floats, ints, strings.
+                            # we can't directly use a list, which is troubling. 
                             raise scratch_exceptions.InvalidArgumentType(param_type)
                         
                         # creating the actual input
-                        argument_id = self.create_argument(param_type, param, function_id)
-                        params[param] = [argument_id, param_type, param, function_id]
+                        argument_id = self.create_argument(param_type, param_name, function_id)
+                        params[param_name] = [argument_id, param_type, param_name, function_id]
                         
                 # creating list of params for this specific function so we can use it in variables later.
                 self._function_variables[self._indent_level + 1] = params
             elif "if" in tokens:
-                self._most_recent_if[self._if_layers] = self.if_statement(v)
+                self._most_recent_if[self._if_layers + self._indent_level] = self.if_statement(v)
             elif "else" in tokens:
                 # generally the previous recent block on the same indent should always be IF.
                 # this might be false if it's a try and except, but we don't need to worry
-                # about that because scratch doesn't support it. 
+                # about that because scratch doesn't support it.
                 self.morph_if_to_elif(self._most_recent_block[self._indent_level])
                 pass
             elif "elif" in tokens:
@@ -1017,6 +1019,7 @@ class Compiler():
                         end = in_brackets[1]
                         step = in_brackets[2]
 
+
                     root_operator, success = self.generate_evaluation(f"({end}) - ({start})")
                     # success should always be true here. if not, wellllllll
                     if not success:
@@ -1026,10 +1029,15 @@ class Compiler():
 
                     # append the generated variable to the variable list
                     self._generated_variables[loop1] = variable_id 
-                    local_variables[variable_id] = [loop1, start + 1]
+                    local_variables[variable_id] = [loop1, 0]
 
                     # since scratch only "repeats" we have to emulate this behaviour by literally creating an "i" variable (or whatever the user names it)
+                    start_root_operator, success = self.generate_evaluation(start)
+
                     self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Value": start, "VariableId": variable_id, "Name": loop1}, self._most_recent_block[self._indent_level])
+                    if success:
+                        
+                        self.operator_parent_to(self._block_dict[start_root_operator], start_root_operator, self._most_recent_block[self._indent_level])
                     self._most_recent_block[self._indent_level] = self.create_block("control_repeat", {"TIMES": None}, self._most_recent_block[self._indent_level])
                     self._most_recent_block[self._indent_level + 1] = self._most_recent_block[self._indent_level]
                     # we evaluate the repeats and append it to the control_repeat
@@ -1040,11 +1048,19 @@ class Compiler():
                     self._indent_level -= 1
                 elif tokens[anchor + 1] == "enumerate":
                     # enumerate loop
-                    loop1 = tokens[anchor - 2]
+                    loop1 = tokens[anchor - 3]
                     loop2 = tokens[anchor - 1]
+                    print(loop1, loop2)
                     pass
                 else:
                     # likely iterating through a list or variable
+                    loop1 = tokens[anchor - 1]
+                    variable_id = self.generate_id()
+
+                    # append the generated variable to the variable list
+                    self._generated_variables[loop1] = variable_id 
+                    local_variables[variable_id] = [loop1, 0]
+                    self._most_recent_block
                     pass
             elif variable_name is not None:
                 if variable_name not in self._generated_variables.keys():
@@ -1100,6 +1116,5 @@ def main():
     compiler = Compiler(python_file_name, scratch_file_name)
     compiler.compile()
     # translate(python_code, scratch_file_name, project_json)
-
 
 main()

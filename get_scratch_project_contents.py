@@ -10,13 +10,6 @@ def load_project(file_name: str) -> dict:
     return project_json
 
 
-def load_python_file(file_name: str) -> dict:
-    """Returns the contents of a text file in a line by line array"""
-    with open(file_name, "r") as f:
-        return f.readlines()
-
-
-
 def print_out_stuff(json_dict: dict):
     # print("FULL: ", json.dumps(project_json, indent=4))
     for i in json_dict["targets"]:
@@ -28,18 +21,18 @@ def print_out_stuff(json_dict: dict):
             print(id, json.dumps(blocks[id], indent=4, ensure_ascii=True))
 
 
-# project_json = load_project("scratch_project/Scratch Project.sb3")
+project_json = load_project("scratch_project/Scratch Project.sb3")
+print_out_stuff(project_json)
+
+# project_json = load_project("scratch_project/Guinnea Pig.sb3")
 # print_out_stuff(project_json)
 
-project_json = load_project("scratch_project/Guinnea Pig.sb3")
-print_out_stuff(project_json)
 
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--dir", help="file directory to print out")
-args = parser.parse_args()
-project_json = load_project(args.dir)
-print_out_stuff(project_json)
+# parser = argparse.ArgumentParser()
+# parser.add_argument("--dir", help="file directory to print out")
+# args = parser.parse_args()
+# project_json = load_project(args.dir)
+# print_out_stuff(project_json)
 
 
 # example of block data:

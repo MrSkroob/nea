@@ -1,5 +1,6 @@
 # testing for basic idea of adding blocks to a scratch project.
 # this one is for a basic block.
+import time
 import json
 import zipfile
 import re
@@ -8,6 +9,8 @@ from dependencies import scratch_exceptions
 from dependencies.scratch_compiler_regex_utils import *
 
 # useful regexes
+SINGLE_EQUAL = r"(?<!=)=(?!=)"
+
 TYPES = {
     "bool": "%b",
     "int": "%s",
@@ -50,7 +53,7 @@ OPERATORS = {
 
 BOOLEAN_OPERATORS = {
     "?": ".", # I'll need special behaviour for this BECAUSE OF COURSE I DO
-    "=": "operator_equals",
+    "`": "operator_equals",
     "<": "operator_lt",
     ">": "operator_gt",
     "!": "operator_not",
@@ -61,7 +64,7 @@ BOOLEAN_OPERATORS = {
 
 BOOLEAN_SUB = {
     "!=": "?",
-    "==": "=",
+    "==": "`",
     "<": "<",
     ">": ">",
     "not": "!",
@@ -73,7 +76,7 @@ BOOLEAN_SUB = {
 BOOLEAN_ORDER = [
     "(",
     "?",
-    "=",
+    "`",
     "<",
     ">",
     "!",
@@ -413,8 +416,6 @@ class Compiler():
         next_indent = self._most_recent_block.get(self._indent_level + 1, None)
         previous_indent = self._most_recent_block.get(self._indent_level - 1, None)
 
-        print("PARENT", parent_block["opcode"])
-
         if parent_block["opcode"] == "control_if":
             if previous_indent == parent or next_indent is None: 
                 # this means that we are parenting inside of the substack
@@ -464,7 +465,7 @@ class Compiler():
             self.__parent_to(block_data_copy, block_args, block_id, parent)
         if opcode != "procedures_prototype":
             block_data_copy["y"] = self._line_number * 25
-        if opcode == "procedures_prototype":
+        else:
             # create the basic template for any future arguments to add. 
             block_data_copy["shadow"] = True
             block_data_copy["mutation"] = {
@@ -484,6 +485,35 @@ class Compiler():
             }
             # del block_data_copy["x"]
             # del block_data_copy["y"]
+        if opcode == "procedures_call":
+            block_data_copy = copy.deepcopy(self._block_dict[block_args["FunctionId"]])
+            block_data_copy["opcode"] = opcode
+            block_data_copy["shadow"] = False
+            # we use iter because there's always going to be one anyway.
+            index = 0 
+            for id in block_data_copy["inputs"]:
+                if index >= len(block_args["Args"]): continue
+                if block_args["Args"][index].get("VariableName", None) is not None:
+                    # argument is a variable!!!!
+                    pass
+                elif block_args["Args"][index].get("OperatorId", None) is not None:
+                    # argument is an operator!!!
+                    pass
+                elif self.is_parameter(block_args["Args"][index]):
+                    # argument is a parameter!!!
+                    pass
+                else:
+                    block_data_copy["inputs"][id] = [
+                        1,
+                        [
+                            10,
+                            block_args["Args"][index]
+                        ]
+                    ]
+                index += 1
+            
+            del block_data_copy["mutation"]["argumentnames"]
+            del block_data_copy["mutation"]["argumentdefaults"]
         elif opcode == "data_setvariableto":
             if block_args.get("OperatorId", None) is not None:
                 block_data_copy["inputs"]["VALUE"] = [
@@ -549,34 +579,34 @@ class Compiler():
         """Wrapper function:
         Creates a data_setvariableto block using the generate_evaluation method
         and automatically parents"""
+        # we ignore anything before the = sign, because it's irrelevant
+        if search(line, SINGLE_EQUAL):
+            anchor = line.find("=")
+            line = line[anchor + 1:].lstrip().rstrip()
+
         root_operator, success = self.generate_evaluation(line)
         variable_name = self.get_variable_name_from_id(variable_id)
         opcode = "data_" + data_block_type
         if success is False:
             _, index = self.get_operator(root_operator, ORDER)
-            if index != -1:
-                # honestly if this isn't true, then there should be a syntax error anyway.
-                right = root_operator[index + 1:]
-                value = self.get_variable_table_for_operator(right)
-                value["Name"] = variable_name
-                if self.is_parameter(value["Value"]):
-                    # we check if the "value" is part of the function parameter
-                    root = self._function_variables[self._indent_level][value["Value"]]
-                    # pre-generate id
-                    id_to_use = self.generate_id()
-                    value["Value"] = id_to_use
-                    value["OperatorId"] = id_to_use
-                    self._most_recent_block[self._indent_level] = self.create_block(opcode, value, parent)
-                    
-                    # because of the way I coded this, we have to parent the argument after creating the block. 
-                    # makes sense though, you can't have children if the parent doesn't exist.
-                    argument_id = self.create_argument(root[1], root[2], self._most_recent_block[self._indent_level], id_to_use)
-                    self._block_dict[argument_id]["shadow"] = False
-                else:
-                    self._most_recent_block[self._indent_level] = self.create_block(opcode, value, parent)
+            right = root_operator[index + 1:]
+            value = self.get_variable_table_for_operator(right)
+            value["Name"] = variable_name
+            if self.is_parameter(value["Value"]):
+                # we check if the "value" is part of the function parameter
+                root = self._function_variables[self._indent_level][value["Value"]]
+                # pre-generate id
+                id_to_use = self.generate_id()
+                value["Value"] = id_to_use
+                value["OperatorId"] = id_to_use
+                self._most_recent_block[self._indent_level] = self.create_block(opcode, value, parent)
+                
+                # because of the way I coded this, we have to parent the argument after creating the block. 
+                # makes sense though, you can't have children if the parent doesn't exist.
+                argument_id = self.create_argument(root[1], root[2], self._most_recent_block[self._indent_level], id_to_use)
+                self._block_dict[argument_id]["shadow"] = False
             else:
-                self._most_recent_block[self._indent_level] = self.create_block(opcode, {"Name": variable_name, "VariableId": variable_id, "Value": root_operator}, parent)
-                # raise scratch_exceptions.Panic()
+                self._most_recent_block[self._indent_level] = self.create_block(opcode, value, parent)
         else:
             self._most_recent_block[self._indent_level] = self.create_block(opcode, {"Name": variable_name, "VariableId": variable_id, "OperatorId": "TEMP"}, parent)
             self.operator_parent_to(self._block_dict[root_operator], root_operator, self._most_recent_block[self._indent_level])
@@ -592,6 +622,7 @@ class Compiler():
             return {"Value": potential_variable_name}
 
     def get_variable_name_from_id(self, id: str):
+        """Returns the variable name from the given id"""
         for i in self._generated_variables:
             if self._generated_variables[i] == id:
                 return i
@@ -728,6 +759,7 @@ class Compiler():
         if expression_to_use == operator:
             Warning("This shouldn't happen")
             return ""
+        
         if operator == "(":
             # handling stuff in between brackets
             index = expression_to_use.rfind("(")
@@ -735,6 +767,9 @@ class Compiler():
 
             # get the operator inside the bracket, if there is one.
             operator, index = self.get_operator(expression_to_use, BOOLEAN_ORDER)
+
+            if index == -1:
+                return line
 
             left = expression_to_use[:index]
             right = expression_to_use[index + 1:]
@@ -805,10 +840,17 @@ class Compiler():
         return expression
 
     def generate_evaluation(self, line: str):
+        """Wrapper function for self.evaluate. Returns the id of the root operator,
+        to convieniently parent to a block. In future, this might be modified to work
+        for boolean statements too"""
         linked_list = []
         # this code generates a list which we can use to iterate through to create 
         # the string of operators in the correct order. 
-        self.evaluate(line, linked_list)
+        self.evaluate_boolean(line, linked_list)
+        if linked_list == []:
+            self.evaluate(line, linked_list)
+        
+        # self.evaluate(line, linked_list)
         if linked_list == []:
             # if the list is empty, then that means the statement is a simple 
             # variable = variable 
@@ -828,13 +870,43 @@ class Compiler():
 
             root_operator = None
 
+            # for evaluation in linked_list:
+            #     # iterate through, and simply create an operator using the data provided. 
+            #     if prev_id is None:
+            #         root_operator = evaluation["Id"]
+            #     self.create_operator(OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
+            #     prev_id = evaluation["Id"]
+            
+
             for evaluation in linked_list:
-                # iterate through, and simply create an operator using the data provided. 
                 if prev_id is None:
                     root_operator = evaluation["Id"]
-                self.create_operator(OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
+                if evaluation["Operator"] == ".":
+                    raise scratch_exceptions.UnsupportedFeature("!= (please use == instead)")
+                
+                success_1 = False
+                success_2 = False
+                if evaluation["Value"][0].get("Value", None) is not None:
+                    root_operator_1, success_1 = self.generate_evaluation(evaluation["Value"][0]["Value"])
+                    if success_1:
+                        evaluation["Value"][0] = self.get_variable_table_for_operator(root_operator_1)
+
+                if evaluation["Value"][1].get("Value", None) is not None:
+                    root_operator_2, success_2 = self.generate_evaluation(evaluation["Value"][1]["Value"])
+                    if success_2:
+                        evaluation["Value"][1] = self.get_variable_table_for_operator(root_operator_2)
+
+                if BOOLEAN_OPERATORS.get(evaluation["Operator"], None) is None:
+                    parent = self.create_operator(OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
+                else:
+                    parent = self.create_operator(BOOLEAN_OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
                 prev_id = evaluation["Id"]
-            
+
+                if success_1:
+                    self.operator_parent_to(self._block_dict[root_operator_1], root_operator_1, parent)
+                if success_2:
+                    self.operator_parent_to(self._block_dict[root_operator_2], root_operator_2, parent)
+
             return root_operator, True
 
     def morph_if_to_elif(self, if_id: str):
@@ -849,6 +921,8 @@ class Compiler():
         self._most_recent_block[self._indent_level + 1] = if_id
 
     def if_statement(self, line: str, fake_indent: bool = None):
+        """Creates an if statement from the given statement, 
+        to forcefully parent to an else block, set fake_indent to True"""
         parent = self._most_recent_block[self._indent_level]
         block_id = self.generate_id()
         self.create_block("control_if", {"CONDITION": [2, "TEMP"], "PARENT_TO_ELIF": fake_indent}, parent, block_id)
@@ -902,7 +976,13 @@ class Compiler():
 
             
         return block_id
-    
+
+    def get_function_name(self, line: str):
+        for i in self._functions:
+            if line.find(i) != -1:
+                return i
+        return -1
+
     def compile(self):
         global_lists = {}
         global_variables = {} # store in studio
@@ -925,6 +1005,9 @@ class Compiler():
                 self._most_recent_block[self._indent_level] = None
 
             tokens = get_tokens(v)
+            function_found = self.get_function_name(v)
+            variable_name, _ = get_variable_name(v)
+
             if sprite_variable == "":
                 if "scratchproject.Sprite" in v:
                     # check if we've already defined a sprite variable
@@ -949,8 +1032,6 @@ class Compiler():
                     sprite_is_studio = True
                     sprite_index = studio_index
                     self._generated_variables[sprite_variable] = "PY_COMPILER"
-
-            variable_name, _ = get_variable_name(v)
             if "def" in tokens:                
                 function_name = tokens[tokens.index("def") + 1]
                 # because I'm not expecting for there to be children oustide the inner stack for definitions, 
@@ -982,7 +1063,8 @@ class Compiler():
                         params[param_name] = [argument_id, param_type, param_name, function_id]
                         
                 # creating list of params for this specific function so we can use it in variables later.
-                self._function_variables[self._indent_level + 1] = params
+                self._functions[function_name] = function_id
+                self._function_variables[self._indent_level + 1] = params     
             elif "if" in tokens:
                 self._most_recent_if[self._if_layers + self._indent_level] = self.if_statement(v)
             elif "else" in tokens:
@@ -1019,7 +1101,6 @@ class Compiler():
                         end = in_brackets[1]
                         step = in_brackets[2]
 
-
                     root_operator, success = self.generate_evaluation(f"({end}) - ({start})")
                     # success should always be true here. if not, wellllllll
                     if not success:
@@ -1032,11 +1113,10 @@ class Compiler():
                     local_variables[variable_id] = [loop1, 0]
 
                     # since scratch only "repeats" we have to emulate this behaviour by literally creating an "i" variable (or whatever the user names it)
-                    start_root_operator, success = self.generate_evaluation(start)
+                    start_root_operator, success = self.generate_evaluation(str(start))
 
                     self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Value": start, "VariableId": variable_id, "Name": loop1}, self._most_recent_block[self._indent_level])
                     if success:
-                        
                         self.operator_parent_to(self._block_dict[start_root_operator], start_root_operator, self._most_recent_block[self._indent_level])
                     self._most_recent_block[self._indent_level] = self.create_block("control_repeat", {"TIMES": None}, self._most_recent_block[self._indent_level])
                     self._most_recent_block[self._indent_level + 1] = self._most_recent_block[self._indent_level]
@@ -1050,7 +1130,6 @@ class Compiler():
                     # enumerate loop
                     loop1 = tokens[anchor - 3]
                     loop2 = tokens[anchor - 1]
-                    print(loop1, loop2)
                     pass
                 else:
                     # likely iterating through a list or variable
@@ -1062,6 +1141,19 @@ class Compiler():
                     local_variables[variable_id] = [loop1, 0]
                     self._most_recent_block
                     pass
+            elif function_found != -1:
+                function_id = self._functions[function_found]
+                args = get_value_in_brackets(v)[0]
+                if not param_string:
+                    param_list = []
+                else:
+                    # generate a tuple of all parameters. 
+                    param_list = (''.join(args.split())).split(",")
+                    for i, param in enumerate(param_list):
+                        root_operator, success = self.generate_evaluation(param.strip('"'))
+                        param_list[i] = root_operator
+                print(param_list)
+                self._most_recent_block[self._indent_level] = self.create_block("procedures_call", {"FunctionId": function_id, "Args": param_list}, self._most_recent_block[self._indent_level])
             elif variable_name is not None:
                 if variable_name not in self._generated_variables.keys():
                     if variable_name != sprite_variable:
@@ -1076,7 +1168,7 @@ class Compiler():
                         else:
                             if sprite_is_studio: # if studio, we will make the variable global.
                                 """
-                                According to scratch wiki, global variables are stored in the stage. So this isn't a hack okay!!!!
+                                According to scratch wiki, global variables are stored in the stage
                                 """
                                 global_variables[variable_id] = [variable_name, 0]
                             else:
@@ -1090,6 +1182,8 @@ class Compiler():
 
         if not sprite_is_studio:
             # adding variables created in script
+            self._result_file_code["targets"][sprite_index]["variables"] = {} # we clear the previous variables because we don't want 
+                                                                              # previously similar variable names to compete
             for i in global_variables:
                 self._result_file_code["targets"][studio_index]["variables"][i] = global_variables[i]
 
@@ -1112,9 +1206,11 @@ def main():
 
     # scratch_file_name = input("Scratch file to compile to: ")
     scratch_file_name = "Guinnea Pig.sb3"
-
+    print("COMPILING", python_file_name)
+    start_time = time.time()
     compiler = Compiler(python_file_name, scratch_file_name)
     compiler.compile()
+    print("Finished, time took:", time.time() - start_time)
     # translate(python_code, scratch_file_name, project_json)
 
 main()

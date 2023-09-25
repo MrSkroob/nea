@@ -6,6 +6,7 @@ sprite = scratch_project.Sprite("Sprite1")
 finished = 8 + 2
 
 var = 8
+finished = var
 
 for i in range(4):
     var += 1

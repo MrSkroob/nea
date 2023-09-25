@@ -197,6 +197,12 @@ class Compiler():
         except KeyError:
             return False
 
+    def is_variable_id(self, id: str):
+        for i in self._generated_variables:
+            if self._generated_variables[i] == id:
+                return True, i
+        return False, None
+#
     def get_next_id(self):
         """Predicts what the next id might be"""
         return str(self._block_id + 1) + "PY_TO_SCRATCH"
@@ -489,19 +495,37 @@ class Compiler():
             block_data_copy = copy.deepcopy(self._block_dict[block_args["FunctionId"]])
             block_data_copy["opcode"] = opcode
             block_data_copy["shadow"] = False
-            # we use iter because there's always going to be one anyway.
             index = 0 
             for id in block_data_copy["inputs"]:
-                if index >= len(block_args["Args"]): continue
-                if block_args["Args"][index].get("VariableName", None) is not None:
-                    # argument is a variable!!!!
-                    pass
-                elif block_args["Args"][index].get("OperatorId", None) is not None:
-                    # argument is an operator!!!
-                    pass
-                elif self.is_parameter(block_args["Args"][index]):
-                    # argument is a parameter!!!
-                    pass
+                if index >= len(block_args["Args"]): break
+                if self.is_id(block_args["Args"][index]):
+                    # is some sort of id.
+                    success, variable_name = self.is_variable_id(block_args["Args"][index])
+                    if self.is_parameter(block_args["Args"][index]):
+                        # is a function parameter.
+                        pass
+                        
+                    elif success:
+                        # argument is a variable!!!!
+                        value = {"VariableName": variable_name, "VariableId": block_args["Args"][index]}
+                        block_data_copy["inputs"][id] = [
+                            3,
+                            [
+                                12,
+                                value["VariableName"],
+                                value["VariableId"]
+                            ]
+                        ]
+                    else:
+                        # hopefully this is an operator of some sort, otherwise we're SCREWED
+                        block_data_copy["inputs"][id] = [
+                            3,
+                            block_args["Args"][index],
+                            [
+                                10,
+                                ""
+                            ]
+                        ]
                 else:
                     block_data_copy["inputs"][id] = [
                         1,
@@ -591,8 +615,11 @@ class Compiler():
             _, index = self.get_operator(root_operator, ORDER)
             right = root_operator[index + 1:]
             value = self.get_variable_table_for_operator(right)
-            value["Name"] = variable_name
-            if self.is_parameter(value["Value"]):
+            if value.get("VariableName", None) is not None:
+                self._most_recent_block[self._indent_level] = self.create_block(opcode, {"Name": variable_name, "VariableId": variable_id, "OperatorId": value["VariableId"]}, parent)
+            # TODO ADD SUPPORT FOR BARE VARIABLE ASSIGNMENT!
+            elif self.is_parameter(value["Value"]):
+                value["Name"] = variable_name
                 # we check if the "value" is part of the function parameter
                 root = self._function_variables[self._indent_level][value["Value"]]
                 # pre-generate id
@@ -606,6 +633,8 @@ class Compiler():
                 argument_id = self.create_argument(root[1], root[2], self._most_recent_block[self._indent_level], id_to_use)
                 self._block_dict[argument_id]["shadow"] = False
             else:
+                # regular value like 8 :P
+                value["Name"] = variable_name
                 self._most_recent_block[self._indent_level] = self.create_block(opcode, value, parent)
         else:
             self._most_recent_block[self._indent_level] = self.create_block(opcode, {"Name": variable_name, "VariableId": variable_id, "OperatorId": "TEMP"}, parent)
@@ -1152,7 +1181,6 @@ class Compiler():
                     for i, param in enumerate(param_list):
                         root_operator, success = self.generate_evaluation(param.strip('"'))
                         param_list[i] = root_operator
-                print(param_list)
                 self._most_recent_block[self._indent_level] = self.create_block("procedures_call", {"FunctionId": function_id, "Args": param_list}, self._most_recent_block[self._indent_level])
             elif variable_name is not None:
                 if variable_name not in self._generated_variables.keys():

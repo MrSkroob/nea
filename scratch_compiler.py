@@ -51,6 +51,10 @@ OPERATORS = {
     "%": "operator_mod",
 }
 
+STR_OPERATORS = {
+    "+=": "operator_length"
+}
+
 BOOLEAN_OPERATORS = {
     "?": ".", # I'll need special behaviour for this BECAUSE OF COURSE I DO
     "`": "operator_equals",
@@ -189,6 +193,8 @@ class Compiler():
 
     def is_id(self, id: str):
         """Checks if the given string is a PY_TO_SCRATCH id."""
+        if type(id) is not str:
+            return False
         return id.find("PY_TO_SCRATCH") != -1
 
     def is_parameter(self, param_name: str):
@@ -464,7 +470,6 @@ class Compiler():
             block_id = id_to_use
         block_data_copy = copy.deepcopy(BLOCK_DATA)
         block_data_copy["opcode"] = opcode
-        # things might get a lil' hard coded in here >:)
         if parent is None:
             parent = self._most_recent_block[self._indent_level - 1]
         if parent is not False:
@@ -501,11 +506,7 @@ class Compiler():
                 if self.is_id(block_args["Args"][index]):
                     # is some sort of id.
                     success, variable_name = self.is_variable_id(block_args["Args"][index])
-                    if self.is_parameter(block_args["Args"][index]):
-                        # is a function parameter.
-                        pass
-                        
-                    elif success:
+                    if success:
                         # argument is a variable!!!!
                         value = {"VariableName": variable_name, "VariableId": block_args["Args"][index]}
                         block_data_copy["inputs"][id] = [
@@ -517,7 +518,8 @@ class Compiler():
                             ]
                         ]
                     else:
-                        # hopefully this is an operator of some sort, otherwise we're SCREWED
+                        # should be an operator or a parameter of some sort of function
+                        # if not... idk, panic? raise ScratchExceptions.Panic() :/
                         block_data_copy["inputs"][id] = [
                             3,
                             block_args["Args"][index],
@@ -604,10 +606,11 @@ class Compiler():
         Creates a data_setvariableto block using the generate_evaluation method
         and automatically parents"""
         # we ignore anything before the = sign, because it's irrelevant
+        
+        line = self.convert_expression(line)
         if search(line, SINGLE_EQUAL):
             anchor = line.find("=")
             line = line[anchor + 1:].lstrip().rstrip()
-
         root_operator, success = self.generate_evaluation(line)
         variable_name = self.get_variable_name_from_id(variable_id)
         opcode = "data_" + data_block_type
@@ -646,8 +649,21 @@ class Compiler():
         if potential_variable_name in self._generated_variables.keys():
             return {"VariableName": potential_variable_name, "VariableId": self._generated_variables[potential_variable_name]}
         else:
-            potential_variable_name = potential_variable_name.replace("'", "")
-            potential_variable_name = potential_variable_name.replace('"', "")
+            potential_variable_name = potential_variable_name.replace("'", '"')
+            
+            # we want to preserve the typing and not just turn every number into a string.
+            # what if the user wants to do "8" + "9" to get "89"?
+            # TODO add distinguishing feature to values to determine if they're a number or a string.
+            if potential_variable_name.isdigit():
+                # integer!
+                potential_variable_name = int(potential_variable_name)
+            else:
+                try:
+                    # trying to convert to float
+                    potential_variable_name = float(potential_variable_name)
+                except ValueError:
+                    # whelp, i guess it wants to stay as a str. 
+                    pass
             return {"Value": potential_variable_name}
 
     def get_variable_name_from_id(self, id: str):
@@ -658,6 +674,8 @@ class Compiler():
 
     def convert_expression(self, line: str):
         """Formats the expression to have no whitespace"""
+        if type(line) is not str:
+            return line
         line = "".join(line.split())
         for i in COMBINED_OPERATORS:
             index = line.find(i)
@@ -673,6 +691,9 @@ class Compiler():
         """Formats the expression to have no whitespace
         and replaces boolean operators with a more processable type used by
         evaluate_boolean"""
+        if type(line) is not str:
+            # yeah i know the function LITERALLY ASKS FOR A STR
+            return line
         line = "".join(line.split())
         for i in BOOLEAN_SUB:
             line = line.replace(i, BOOLEAN_SUB[i])
@@ -683,6 +704,8 @@ class Compiler():
         operator = ""
         index = -1
         for i in operator_order:
+            if type(line) is not str:
+                break
             index = line.find(i)
             if index != -1:
                 operator = i
@@ -693,7 +716,6 @@ class Compiler():
         """Updates the linked_list given with a list of parameters. This list reversed can be used
         repeatedly by create_operator to correctly follow bodmas"""
         expression = self.convert_expression(line)
-        # expression = expression.replace("()", "") not sure if this line is needed.
         operator, index = self.get_operator(expression, REVERSED_ORDER)
         
         if operator == "=":
@@ -879,7 +901,6 @@ class Compiler():
         if linked_list == []:
             self.evaluate(line, linked_list)
         
-        # self.evaluate(line, linked_list)
         if linked_list == []:
             # if the list is empty, then that means the statement is a simple 
             # variable = variable 
@@ -895,17 +916,9 @@ class Compiler():
             linked_list.reverse()
 
             prev_id = None
-            # we have to parent this to something, right?
+            # for now, the parent is none so we can manually assign it to any parent we want later. 
 
             root_operator = None
-
-            # for evaluation in linked_list:
-            #     # iterate through, and simply create an operator using the data provided. 
-            #     if prev_id is None:
-            #         root_operator = evaluation["Id"]
-            #     self.create_operator(OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
-            #     prev_id = evaluation["Id"]
-            
 
             for evaluation in linked_list:
                 if prev_id is None:
@@ -967,13 +980,6 @@ class Compiler():
         # if the string we get from this is invalid, then there would've been a syntax error anyway.
         linked_list = []
         self.evaluate_boolean(statement, linked_list)
-        # please note that while it is fine to do in python to do this:
-        # if 1 + 1 == 2:
-        # and scratch can do this too, i have deemed it for my mental sanity to not implement this.
-        # please try: 
-        # one_plus_one = 1 + 1
-        # if one_plus_one == 2:
-        # instead.
         linked_list.reverse()
         if linked_list == []:
             raise scratch_exceptions.UnsupportedFeature("no comparators in boolean statement")

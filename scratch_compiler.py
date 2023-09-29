@@ -212,6 +212,7 @@ class Compiler():
     def replace_variable_name_with_id(self, line: str):
         # TODO check if line is an actual string, so it doesn't get replaced with an id.
         if type(line) is not str:
+            Warning("Expected a string, got type:", type(line))
             return line
         for i in self._generated_variables:
             line = re.sub(r"\b" + i + r"\b", self._generated_variables[i], line)
@@ -737,7 +738,7 @@ class Compiler():
                 break
         return operator, index
 
-    def __append_linked_list(self, expression_to_use: str, op_index: int, operator: str, linked_list: list[dict], recursive_function: function):
+    def __append_linked_list(self, expression: str, expression_to_use: str, op_index: int, operator: str, linked_list: list[dict], recursive_function):
         """Should not be used outside of self.evaluate and self.evaluate_boolean"""
         left = expression_to_use[:op_index]
         right = expression_to_use[op_index + 1:]
@@ -748,12 +749,14 @@ class Compiler():
         left = re.sub(r"[()]", "", left).strip()
         right = re.sub(r"[()]", "", right).strip()
 
+        print(expression, left, operator, right)
+
         left_result = self.get_variable_table_for_operator(recursive_function(left, linked_list))
         right_result = self.get_variable_table_for_operator(recursive_function(right, linked_list))
 
         id_to_use = self.generate_id()
         expression = expression.replace("(" + left + operator + right + ")", id_to_use)
-        if expression.find(left + operator + right):
+        if expression.find(left + operator + right) != -1:
             expression = expression.replace(left + operator + right, id_to_use)
 
         linked_list.append(
@@ -764,6 +767,7 @@ class Compiler():
             }
         )
 
+        recursive_function(expression, linked_list)
     def evaluate(self, expression: str, linked_list: list[dict]):
         """Updates the linked_list given with a list of parameters. This list reversed can be used
         repeatedly by create_operator to correctly follow bodmas"""
@@ -796,7 +800,7 @@ class Compiler():
                 expression_to_use = expression.replace("(" + expression_to_use + ")", expression_to_use)
                 return self.evaluate(expression_to_use, linked_list)
 
-            self.__append_linked_list(expression_to_use, op_index, operator, linked_list, self.evaluate)
+            self.__append_linked_list(expression, expression_to_use, op_index, operator, linked_list, self.evaluate)
             # left = expression_to_use[:op_index]
             # right = expression_to_use[op_index + 1:]
 
@@ -821,9 +825,9 @@ class Compiler():
             #         "Id": id_to_use,
             #     }
             # )
-            self.evaluate(expression, linked_list)
+            # self.evaluate(expression, linked_list)
         else:
-            self.__append_linked_list(expression_to_use, index, operator, linked_list, self.evaluate)
+            self.__append_linked_list(expression, expression_to_use, index, operator, linked_list, self.evaluate)
             # left = expression_to_use[:index]
             # right = expression_to_use[index + 1:]
 
@@ -847,7 +851,7 @@ class Compiler():
             #         "Id": id_to_use,
             #     }
             # )
-            self.evaluate(expression, linked_list)
+            # self.evaluate(expression, linked_list)
 
         return expression
     
@@ -875,7 +879,7 @@ class Compiler():
             if index == -1:
                 return line
 
-            self.__append_linked_list(expression_to_use, index, operator, linked_list, self.evaluate_boolean)
+            self.__append_linked_list(expression, expression_to_use, index, operator, linked_list, self.evaluate_boolean)
             # left = expression_to_use[:index]
             # right = expression_to_use[index + 1:]
             
@@ -900,7 +904,7 @@ class Compiler():
             #         "Id": id_to_use,
             #     }
             # )
-            self.evaluate_boolean(expression, linked_list)
+            # self.evaluate_boolean(expression, linked_list)
         elif operator == "!":
             right = expression_to_use[index + 1:]
             right = re.sub(r"[()]", "", right).strip()
@@ -917,7 +921,7 @@ class Compiler():
             )
             self.evaluate_boolean(expression, linked_list)
         else:
-            self.__append_linked_list(expression_to_use, index, operator, linked_list, self.evaluate_boolean)
+            self.__append_linked_list(expression, expression_to_use, index, operator, linked_list, self.evaluate_boolean)
             # left = expression_to_use[:index]
             # right = expression_to_use[index + 1:]
 
@@ -941,7 +945,7 @@ class Compiler():
             #         "Id": id_to_use,
             #     }
             # )
-            self.evaluate_boolean(expression, linked_list)
+            # self.evaluate_boolean(expression, linked_list)
 
         return expression
 

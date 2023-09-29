@@ -52,26 +52,27 @@ OPERATORS = {
 }
 
 STR_OPERATORS = {
-    "+=": "operator_length"
+    "+=": "operator_length",
+    "+": "operator_length"
 }
 
 BOOLEAN_OPERATORS = {
-    "?": ".", # I'll need special behaviour for this BECAUSE OF COURSE I DO
+    "。": ".", # I'll need special behaviour for this BECAUSE OF COURSE I DO
     "`": "operator_equals",
     "<": "operator_lt",
     ">": "operator_gt",
-    "!": "operator_not",
+    "¬": "operator_not",
     "&": "operator_and",
     "|": "operator_or"
 }
 
 
 BOOLEAN_SUB = {
-    "!=": "?",
+    "!=": "。",
     "==": "`",
     "<": "<",
     ">": ">",
-    "not": "!",
+    "not": "¬",
     "and": "&",
     "or": "|"
 }
@@ -80,10 +81,10 @@ BOOLEAN_SUB = {
 BOOLEAN_ORDER = [
     "(",
     "?",
-    "`",
+    "¬",
     "<",
     ">",
-    "!",
+    "¬",
     "&",
     "|"
 ]
@@ -176,10 +177,9 @@ class Compiler():
 
         self._sprite_list = [i["name"] for i in self._result_file_code["targets"]]
         self._most_recent_if = {}
-        # self._if_statements = [] # list to iterate backwards to find correct parent. 
         self._function_variables = {}
         self._functions = {}
-        self._generated_variables = {}
+        self._generated_variables: dict[str: str] = {}
         self._generated_lists = {}
         self._most_recent_block = {}
         self._block_dict = {}
@@ -203,12 +203,20 @@ class Compiler():
         except KeyError:
             return False
 
-    def is_variable_id(self, id: str):
+    def is_variable_id(self, id: str) -> tuple[bool, str | None]:
         for i in self._generated_variables:
             if self._generated_variables[i] == id:
                 return True, i
         return False, None
-#
+
+    def replace_variable_name_with_id(self, line: str):
+        # TODO check if line is an actual string, so it doesn't get replaced with an id.
+        if type(line) is not str:
+            return line
+        for i in self._generated_variables:
+            line = re.sub(r"\b" + i + r"\b", self._generated_variables[i], line)
+        return line
+
     def get_next_id(self):
         """Predicts what the next id might be"""
         return str(self._block_id + 1) + "PY_TO_SCRATCH"
@@ -289,23 +297,35 @@ class Compiler():
             ]
         else:
             is_argument =  self.is_parameter(value["Value"])
-            if self.is_id(value["Value"]) or is_argument:
+            if self.is_id(value["Value"]):
                 # check if value exists as an argument in a function
-                if is_argument:
+                success, name = self.is_variable_id(value["Value"])
+                if is_argument or not success:
                     # this should always be true honestly
-                    root = self._function_variables[self._indent_level][value["Value"]]
-                    param_type = root[1]
-                    param = root[2]
-                    value["Value"] = self.create_argument(param_type, param, parent_id)
-                    self._block_dict[value["Value"]]["shadow"] = False
-                value1 = [
-                    3,
-                    value["Value"],
-                    [
-                        4,
-                        ""
+                    if is_argument:
+                        root = self._function_variables[self._indent_level][value["Value"]]
+                        param_type = root[1]
+                        param = root[2]
+                        value["Value"] = self.create_argument(param_type, param, parent_id)
+                        self._block_dict[value["Value"]]["shadow"] = False
+                    value1 = [
+                        3,
+                        value["Value"],
+                        [
+                            4,
+                            ""
+                        ]
                     ]
-                ]
+                else:
+                    # variable
+                    value1 = [
+                        3,
+                        [
+                            12,
+                            name,
+                            value["Value"]
+                        ],
+                    ]
             else:
                 value1 = [
                     1,
@@ -369,6 +389,9 @@ class Compiler():
                     "10"
                 ]
             ]
+        elif self._block_dict[parent]["opcode"] == "operator_length":
+            value = self.format_value_for_operator(child, parent)
+            self._block_dict[parent]["inputs"]["STRING"] = value
         elif self._block_dict[parent]["opcode"] in BOOLEAN_OPERATOR_LIST:
             # check if operator is a boolean operator
             self.assign_to_boolean_operator(parent, child)
@@ -407,6 +430,8 @@ class Compiler():
             block_data_copy["inputs"]["OPERAND"] = [
                 value1
             ]
+        elif opcode == "operator_length":
+            block_data_copy["inputs"]["STRING"] = value1
         else:
             block_data_copy["inputs"] = {
                 "OPERAND1": value1,
@@ -696,7 +721,7 @@ class Compiler():
             return line
         line = "".join(line.split())
         for i in BOOLEAN_SUB:
-            line = line.replace(i, BOOLEAN_SUB[i])
+            line = re.sub(r"\b" + BOOLEAN_SUB[i] + r"\b", "", line)
         return line     
 
     def get_operator(self, line: str, operator_order: list[str]):
@@ -712,10 +737,36 @@ class Compiler():
                 break
         return operator, index
 
-    def evaluate(self, line: str, linked_list: list[dict]):
+    def __append_linked_list(self, expression_to_use: str, op_index: int, operator: str, linked_list: list[dict], recursive_function: function):
+        """Should not be used outside of self.evaluate and self.evaluate_boolean"""
+        left = expression_to_use[:op_index]
+        right = expression_to_use[op_index + 1:]
+
+        left = re.split(r"[\/\*\+\-]", left)[-1]
+        right = re.split(r"[\/\*\+\-]", right)[0]
+
+        left = re.sub(r"[()]", "", left).strip()
+        right = re.sub(r"[()]", "", right).strip()
+
+        left_result = self.get_variable_table_for_operator(recursive_function(left, linked_list))
+        right_result = self.get_variable_table_for_operator(recursive_function(right, linked_list))
+
+        id_to_use = self.generate_id()
+        expression = expression.replace("(" + left + operator + right + ")", id_to_use)
+        if expression.find(left + operator + right):
+            expression = expression.replace(left + operator + right, id_to_use)
+
+        linked_list.append(
+            {
+                "Operator": operator,
+                "Value": [left_result, right_result],
+                "Id": id_to_use,
+            }
+        )
+
+    def evaluate(self, expression: str, linked_list: list[dict]):
         """Updates the linked_list given with a list of parameters. This list reversed can be used
         repeatedly by create_operator to correctly follow bodmas"""
-        expression = self.convert_expression(line)
         operator, index = self.get_operator(expression, REVERSED_ORDER)
         
         if operator == "=":
@@ -745,62 +796,64 @@ class Compiler():
                 expression_to_use = expression.replace("(" + expression_to_use + ")", expression_to_use)
                 return self.evaluate(expression_to_use, linked_list)
 
-            left = expression_to_use[:op_index]
-            right = expression_to_use[op_index + 1:]
+            self.__append_linked_list(expression_to_use, op_index, operator, linked_list, self.evaluate)
+            # left = expression_to_use[:op_index]
+            # right = expression_to_use[op_index + 1:]
 
-            left = re.split(r"[\/\*\+\-]", left)[-1]
-            right = re.split(r"[\/\*\+\-]", right)[0]
+            # left = re.split(r"[\/\*\+\-]", left)[-1]
+            # right = re.split(r"[\/\*\+\-]", right)[0]
 
-            left = re.sub(r"[()]", "", left).strip()
-            right = re.sub(r"[()]", "", right).strip()
+            # left = re.sub(r"[()]", "", left).strip()
+            # right = re.sub(r"[()]", "", right).strip()
 
-            left_result = self.get_variable_table_for_operator(self.evaluate(left, linked_list))
-            right_result = self.get_variable_table_for_operator(self.evaluate(right, linked_list))
+            # left_result = self.get_variable_table_for_operator(self.evaluate(left, linked_list))
+            # right_result = self.get_variable_table_for_operator(self.evaluate(right, linked_list))
 
-            id_to_use = self.generate_id()
-            expression = expression.replace("(" + left + operator + right + ")", id_to_use)
-            if expression.find(left + operator + right):
-                expression = expression.replace(left + operator + right, id_to_use)
+            # id_to_use = self.generate_id()
+            # expression = expression.replace("(" + left + operator + right + ")", id_to_use)
+            # if expression.find(left + operator + right):
+            #     expression = expression.replace(left + operator + right, id_to_use)
 
-            linked_list.append(
-                {
-                    "Operator": operator,
-                    "Value": [left_result, right_result],
-                    "Id": id_to_use,
-                }
-            )
+            # linked_list.append(
+            #     {
+            #         "Operator": operator,
+            #         "Value": [left_result, right_result],
+            #         "Id": id_to_use,
+            #     }
+            # )
             self.evaluate(expression, linked_list)
         else:
-            left = expression_to_use[:index]
-            right = expression_to_use[index + 1:]
+            self.__append_linked_list(expression_to_use, index, operator, linked_list, self.evaluate)
+            # left = expression_to_use[:index]
+            # right = expression_to_use[index + 1:]
 
-            left = re.split(r"[\/\*\+\-]", left)[-1]
-            right = re.split(r"[\/\*\+\-]", right)[0]
+            # left = re.split(r"[\/\*\+\-]", left)[-1]
+            # right = re.split(r"[\/\*\+\-]", right)[0]
 
-            left = re.sub(r"[()]", "", left).strip()
-            right = re.sub(r"[()]", "", right).strip()
+            # left = re.sub(r"[()]", "", left).strip()
+            # right = re.sub(r"[()]", "", right).strip()
 
-            left_result = self.get_variable_table_for_operator(self.evaluate(left, linked_list))
-            right_result = self.get_variable_table_for_operator(self.evaluate(right, linked_list))
+            # left_result = self.get_variable_table_for_operator(self.evaluate(left, linked_list))
+            # right_result = self.get_variable_table_for_operator(self.evaluate(right, linked_list))
 
-            id_to_use = self.generate_id()
+            # id_to_use = self.generate_id()
 
-            expression = expression.replace(left + operator + right, id_to_use)
+            # expression = expression.replace(left + operator + right, id_to_use)
 
-            linked_list.append(
-                {
-                    "Operator": operator,
-                    "Value": [left_result, right_result],
-                    "Id": id_to_use,
-                }
-            )
+            # linked_list.append(
+            #     {
+            #         "Operator": operator,
+            #         "Value": [left_result, right_result],
+            #         "Id": id_to_use,
+            #     }
+            # )
             self.evaluate(expression, linked_list)
 
         return expression
     
     def evaluate_boolean(self, line: str, linked_list: list[dict]):
         """Similar to evaluate, but for boolean expressions only"""
-        expression = self.convert_expression_boolean(line)
+        expression = line
         operator, index = self.get_operator(expression, BOOLEAN_ORDER)
         expression_to_use = expression
 
@@ -822,30 +875,31 @@ class Compiler():
             if index == -1:
                 return line
 
-            left = expression_to_use[:index]
-            right = expression_to_use[index + 1:]
+            self.__append_linked_list(expression_to_use, index, operator, linked_list, self.evaluate_boolean)
+            # left = expression_to_use[:index]
+            # right = expression_to_use[index + 1:]
             
-            left = re.split(r"[\?\=\<\>\!\&\|]", left)[-1]
-            right = re.split(r"[\?\=\<\>\!\&\|]", right)[0]
+            # left = re.split(r"[\?\=\<\>\!\&\|]", left)[-1]
+            # right = re.split(r"[\?\=\<\>\!\&\|]", right)[0]
 
-            left = re.sub(r"[()]", "", left).strip()
-            right = re.sub(r"[()]", "", right).strip()
+            # left = re.sub(r"[()]", "", left).strip()
+            # right = re.sub(r"[()]", "", right).strip()
 
-            left_result = self.get_variable_table_for_operator(self.evaluate_boolean(left, linked_list))
-            right_result = self.get_variable_table_for_operator(self.evaluate_boolean(right, linked_list))
+            # left_result = self.get_variable_table_for_operator(self.evaluate_boolean(left, linked_list))
+            # right_result = self.get_variable_table_for_operator(self.evaluate_boolean(right, linked_list))
 
-            id_to_use = self.generate_id()
-            expression = expression.replace("(" + left + operator + right + ")", id_to_use)
-            if expression.find(left + operator + right):
-                expression = expression.replace(left + operator + right, id_to_use)
+            # id_to_use = self.generate_id()
+            # expression = expression.replace("(" + left + operator + right + ")", id_to_use)
+            # if expression.find(left + operator + right):
+            #     expression = expression.replace(left + operator + right, id_to_use)
 
-            linked_list.append(
-                {
-                    "Operator": operator,
-                    "Value": [left_result, right_result],
-                    "Id": id_to_use,
-                }
-            )
+            # linked_list.append(
+            #     {
+            #         "Operator": operator,
+            #         "Value": [left_result, right_result],
+            #         "Id": id_to_use,
+            #     }
+            # )
             self.evaluate_boolean(expression, linked_list)
         elif operator == "!":
             right = expression_to_use[index + 1:]
@@ -863,42 +917,46 @@ class Compiler():
             )
             self.evaluate_boolean(expression, linked_list)
         else:
-            left = expression_to_use[:index]
-            right = expression_to_use[index + 1:]
+            self.__append_linked_list(expression_to_use, index, operator, linked_list, self.evaluate_boolean)
+            # left = expression_to_use[:index]
+            # right = expression_to_use[index + 1:]
 
-            left = re.split(r"[\?\=\<\>\!\&\|]", left)[-1]
-            right = re.split(r"[\?\=\<\>\!\&\|]", right)[0]
+            # left = re.split(r"[\?\=\<\>\!\&\|]", left)[-1]
+            # right = re.split(r"[\?\=\<\>\!\&\|]", right)[0]
 
-            left = re.sub(r"[()]", "", left).strip()
-            right = re.sub(r"[()]", "", right).strip()
+            # left = re.sub(r"[()]", "", left).strip()
+            # right = re.sub(r"[()]", "", right).strip()
 
-            left_result = self.get_variable_table_for_operator(self.evaluate_boolean(left, linked_list))
-            right_result = self.get_variable_table_for_operator(self.evaluate_boolean(right, linked_list))
+            # left_result = self.get_variable_table_for_operator(self.evaluate_boolean(left, linked_list))
+            # right_result = self.get_variable_table_for_operator(self.evaluate_boolean(right, linked_list))
 
-            id_to_use = self.generate_id()
+            # id_to_use = self.generate_id()
 
-            expression = expression.replace(left + operator + right, id_to_use)
+            # expression = expression.replace(left + operator + right, id_to_use)
 
-            linked_list.append(
-                {
-                    "Operator": operator,
-                    "Value": [left_result, right_result],
-                    "Id": id_to_use,
-                }
-            )
+            # linked_list.append(
+            #     {
+            #         "Operator": operator,
+            #         "Value": [left_result, right_result],
+            #         "Id": id_to_use,
+            #     }
+            # )
             self.evaluate_boolean(expression, linked_list)
 
         return expression
 
-    def generate_evaluation(self, line: str):
+    def generate_evaluation(self, line: str) -> tuple[str, bool]:
         """Wrapper function for self.evaluate. Returns the id of the root operator,
         to convieniently parent to a block. In future, this might be modified to work
         for boolean statements too"""
         linked_list = []
         # this code generates a list which we can use to iterate through to create 
         # the string of operators in the correct order. 
+        line = self.convert_expression_boolean(line)
+        line = self.replace_variable_name_with_id(line)
         self.evaluate_boolean(line, linked_list)
         if linked_list == []:
+            line = self.convert_expression(line)
             self.evaluate(line, linked_list)
         
         if linked_list == []:
@@ -1115,8 +1173,8 @@ class Compiler():
             elif "for" in tokens:
                 # we anchor at "in"
                 anchor = tokens.index("in")
-                in_brackets = get_value_in_brackets(v)[0].split(",")
                 if tokens[anchor + 1] == "range":
+                    in_brackets = get_value_in_brackets(v)[0].split(",")
                     # regular for loop
                     loop1 = tokens[anchor - 1]
                     number_of_arguments = len(in_brackets)
@@ -1170,7 +1228,10 @@ class Compiler():
                     # likely iterating through a list or variable
                     loop1 = tokens[anchor - 1]
                     variable_id = self.generate_id()
-
+                    self._most_recent_block[self._indent_level] = self.create_block("control_repeat", {"TIMES": None}, self._most_recent_block[self._indent_level])
+                    id, success = self.generate_evaluation(tokens[anchor + 1])
+                    operator_id = self.create_operator("operator_length", [{"Value": id}, {"Value": id}], self._most_recent_block[self._indent_level])
+                    self.operator_parent_to(self._block_dict[operator_id], operator_id, self._most_recent_block[self._indent_level])
                     # append the generated variable to the variable list
                     self._generated_variables[loop1] = variable_id 
                     local_variables[variable_id] = [loop1, 0]

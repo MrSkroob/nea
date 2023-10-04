@@ -3,11 +3,12 @@ from dependencies import scratch_project, scratch_enums
 
 sprite = scratch_project.Sprite("Sprite1")
 
-variable = 7 * 4 + 4 / 3
+
+sam_variable = (4 + 5) == 4
 
 
-helloworld = "hello world!"
+nick = "hello world!"
 
 
-for i in helloworld:
+for i in nick:
     pass

@@ -775,23 +775,15 @@ class Compiler():
 
     def evaluate(self, expression: str, linked_list: list[dict]):
         """Updates the linked_list given with a list of parameters. This list reversed can be used
-        repeatedly by create_operator to correctly follow bodmas"""
+        repeatedly by create_operator to correctly follow bodmas."""
         operator, index = self.get_operator(expression, REVERSED_ORDER)
         
-        print(operator, "found in", expression)
-        # if operator == "=":
-        #     # ignoring "=" operators. 
-        #     expression = expression[index + 1:]
-        #     operator, index = self.get_operator(expression, REVERSED_ORDER)
-
         expression_to_use = expression
 
         if index == -1:
             _, index = self.get_operator(expression, BOOLEAN_ORDER)
             if index != -1:
-                print("BEFORE", expression_to_use)
                 expression_to_use = self.evaluate_boolean(expression_to_use, linked_list)
-                print("AFTER", expression_to_use)
                 return expression_to_use
             else:
                 return expression
@@ -822,20 +814,13 @@ class Compiler():
         return expression
     
     def evaluate_boolean(self, line: str, linked_list: list[dict]):
-        """Similar to evaluate, but for boolean expressions only"""
+        """Similar to evaluate, but for boolean expressions only, you shouldn't need to call
+        this over self.evaluate, as it calls this method anyway"""
         expression = line
         expression_to_use = expression
         operator, index = self.get_operator(expression, BOOLEAN_ORDER)
 
         if index == -1:
-            # _, index = self.get_operator(expression, REVERSED_ORDER)
-            # if index != -1:
-            #     print("BEFORE", expression_to_use)
-            #     expression_to_use = self.evaluate(expression_to_use, linked_list)
-            #     print("AFTER", expression_to_use)
-            #     return expression_to_use
-            # else:
-            #     return expression
             return expression
         if expression_to_use == operator:
             raise scratch_exceptions.Panic()
@@ -883,7 +868,6 @@ class Compiler():
                 line = line[anchor + 1:].lstrip().rstrip()
         
         eval_list = []
-        bool_list = []
         # this code generates a list which we can use to iterate through to create 
         # the string of operators in the correct order. 
         line = self.convert_expression(line)
@@ -893,7 +877,7 @@ class Compiler():
         # line = self.evaluate_boolean(line, linked_list)
         line = self.evaluate(line, eval_list)
 
-        if eval_list == [] and bool_list == []:
+        if eval_list == []:
             # if the list is empty, then that means the statement is a simple 
             # variable = variable 
             # or
@@ -913,13 +897,8 @@ class Compiler():
             # reverse, because we want to do lowest priority first. Scratch does top to bottom, list gives us bottom to top, so we want lowest
             # priority at the bottom.
             print("BEFORE", eval_list)
-            bool_list.reverse()
             eval_list.reverse()
             print(eval_list)
-
-            entire_eval = bool_list + eval_list
-
-            print(entire_eval)
 
             prev_id = None
             # for now, the parent is none so we can manually assign it to any parent we want later. 
@@ -927,7 +906,7 @@ class Compiler():
             root_operator = None
 
 
-            for evaluation in entire_eval:
+            for evaluation in eval_list:
                 if prev_id is None:
                     root_operator = evaluation["Id"]
                 if evaluation["Operator"] == "。":
@@ -977,6 +956,7 @@ class Compiler():
         to forcefully parent to an else block, set fake_indent to True"""
         parent = self._most_recent_block[self._indent_level]
         block_id = self.generate_id()
+        
         self.create_block("control_if", {"CONDITION": [2, "TEMP"], "PARENT_TO_ELIF": fake_indent}, parent, block_id)
         self._most_recent_block[self._indent_level + 1] = block_id # this is for blocks inside the stack to parent to.
         self._most_recent_block[self._indent_level] = block_id # this is for blocks outside of the stack to parent to.
@@ -988,38 +968,11 @@ class Compiler():
             statement = line[4:].rstrip()[:-1]
         # we get everything between the "if" and the ":"
         # if the string we get from this is invalid, then there would've been a syntax error anyway.
-        linked_list = []
-        self.evaluate_boolean(statement, linked_list)
-        linked_list.reverse()
-        if linked_list == []:
-            raise scratch_exceptions.UnsupportedFeature("no comparators in boolean statement")
+        operator_id, _ = self.generate_evaluation(statement)
         
-        prev_id = block_id
-        for evaluation in linked_list:
-            if evaluation["Operator"] == ".":
-                raise scratch_exceptions.UnsupportedFeature("!= (please use == instead)")
-            success_1 = False
-            success_2 = False
-            if evaluation["Value"][0].get("Value", None) is not None:
-                root_operator_1, success_1 = self.generate_evaluation(evaluation["Value"][0]["Value"])
-                if success_1:
-                    evaluation["Value"][0] = self.get_variable_table_for_operator(root_operator_1)
+        self.operator_parent_to(self._block_dict[operator_id], operator_id, block_id)
 
-            if evaluation["Value"][1].get("Value", None) is not None:
-                root_operator_2, success_2 = self.generate_evaluation(evaluation["Value"][1]["Value"])
-                if success_2:
-                    evaluation["Value"][1] = self.get_variable_table_for_operator(root_operator_2)
-
-
-            parent = self.create_operator(BOOLEAN_OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
-            prev_id = evaluation["Id"]
-
-            if success_1:
-                self.operator_parent_to(self._block_dict[root_operator_1], root_operator_1, parent)
-            if success_2:
-                self.operator_parent_to(self._block_dict[root_operator_2], root_operator_2, parent)
-  
-        return block_id
+        return block_id 
 
     def get_function_name(self, line: str):
         for i in self._functions:

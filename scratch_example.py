@@ -10,5 +10,9 @@ sam_variable = (4 + 5) == 4
 nick = "hello world!"
 
 
+if (6 + 9) == 3:
+    pass
+
+
 for i in nick:
     pass

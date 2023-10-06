@@ -15,4 +15,5 @@ if (6 + 9) == 3:
 
 
 for i in nick:
-    pass
+    sprite.say("Hello world")
+

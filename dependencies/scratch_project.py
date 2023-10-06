@@ -2,13 +2,18 @@
 # the compiler will use the exact names to know what block to create. 
 # so far it doesn't do that because i haven't coded it in...
 
-
 from __future__ import annotations
 from . import scratch_enums
 
-
 class Studio():
+    """Note that most methods in here functionally don't do anything. They are used for the compiler"""
     def __init__(self) -> None:
+        # internal, for compiler use
+        self._project_path = ""
+
+        # internal
+        self._events = {}
+
         # looks
         self.backdrop_number = 0
         self.backdrop_name = 0
@@ -32,26 +37,37 @@ class Studio():
         self.days_since_2000 = 0
         self.username = ""
 
+    # internal
+    def dictionary_to_edit(self, dictionary: dict):
+        self._project_path = dictionary
+
     # events
-    def green_flag_clicked(self, code: function):
-        code()
     def when_key_pressed(self, keycode: scratch_enums.KeyCode, code: function):
-        code()
+        pass
     def when_backdrop_switches_to(self, backdrop: str, code: function):
-        code()
+        pass
     def when_exceeds(self, attribute: scratch_enums.AttributeEvent, value: int | float, code: function):
-        code()
+        pass
     def when_i_receive(self, message: str, code: function):
-        code()
+        pass
+
     def broadcast(self, message: str):
         pass
+
     def broadcast_and_wait(self, message: str):
         pass
 
     # control
     def wait(self, seconds: int | float):
-        pass
-    def wait_until(self, evaluation: function | bool):
+        return {
+            "opcode": "control_wait",
+            "inputs": {
+                "DURATION": [
+
+                ]
+            }
+        }
+    def wait_until(self, evaluation: bool):
         pass
     def stop(self, location: scratch_enums.Stop):
         pass
@@ -63,8 +79,8 @@ class Studio():
         self.answer = input(question)
     def key(self, keycode: scratch_enums.KeyCode):
         pass
-    def mouse_down(self):
-        pass
+    def mouse_down(self) -> bool:
+        return True
     def reset_timer(self):
         pass
     
@@ -111,6 +127,7 @@ class Sprite(Studio):
     def glide(self, duration: int, position: scratch_enums.Coordinates):
         pass
     def point_in_direction(self, direction: int | float):
+        self.direction = direction
         pass
     def point_towards(self, position: scratch_enums.Position.MOUSE_POINTER | Sprite):
         pass
@@ -155,11 +172,11 @@ class Sprite(Studio):
 
     # events
     def when_sprite_clicked(self, code: function):
-        code()
+        pass
 
     # control
     def delete_this_clone(self):
         pass
     def when_i_start_as_clone(self, code: function):
-        code()
+        pass
     

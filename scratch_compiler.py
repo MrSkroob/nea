@@ -6,6 +6,7 @@ import zipfile
 import re
 import copy
 from dependencies import scratch_exceptions
+from dependencies.scratch_project import Sprite, Studio
 from dependencies.scratch_compiler_regex_utils import *
 
 # useful regexes
@@ -167,6 +168,8 @@ def save_data(file_name: str, data: dict):
 
 class Compiler():
     def __init__(self, file_to_compile: str, file_to_compile_to: str) -> None:
+        studio = Studio()
+        self._scratch_block_data = studio
         self._target_code = load_python_file(file_to_compile)
         self._result_file_code = load_scratch_project(file_to_compile_to)
 
@@ -419,24 +422,28 @@ class Compiler():
             self.operator_parent_to(block_data_copy, block_id, parent)
         value1 = self.format_value_for_operator(values[0], block_id)
         value2 = self.format_value_for_operator(values[1], block_id)
+
+        directory1 = None
+        directory2 = None
+
         if opcode in OPERATOR_LIST:
-            block_data_copy["inputs"] = {
-                "NUM1": value1,
-                "NUM2": value2
-            }
+            directory1 = "NUM1"
+            directory2 = "NUM2"
         elif opcode == "operator_not":
-            # special behaviour for not gate as it only has one parameter
-            # if the two values have different values we are SCREWED
-            block_data_copy["inputs"]["OPERAND"] = [
-                value1
-            ]
+            directory1 = "OPERAND"
+            directory2 = "OPERAND"
+        elif opcode == "operator_letter_of":
+            directory1 = "LETTER"
+            directory2 = "STRING"
         elif opcode == "operator_length":
-            block_data_copy["inputs"]["STRING"] = value1
+            directory1 = "STRING"
+            directory2 = "STRING"
         else:
-            block_data_copy["inputs"] = {
-                "OPERAND1": value1,
-                "OPERAND2": value2
-            }
+            directory1 = "OPERAND1"
+            directory2 = "OPERAND2"
+
+        block_data_copy["inputs"][directory1] = value1
+        block_data_copy["inputs"][directory2] = value2
         block_data_copy["topLevel"] = False
 
         del block_data_copy["x"]
@@ -476,7 +483,9 @@ class Compiler():
                 block_data_copy["parent"] = self._most_recent_if[self._indent_level]
                 self._block_dict[self._most_recent_if[self._indent_level]]["next"] = child
         elif parent_block["opcode"] == "control_repeat":
+            print(previous_indent, next_indent)
             if previous_indent == parent or next_indent is None:
+                print("Inner")
                 parent_block["inputs"]["SUBSTACK"] =  [
                     2,
                     child
@@ -625,6 +634,15 @@ class Compiler():
 
         self._block_dict[block_id] = block_data_copy
         return block_id
+
+    def duplicate_block(self, id: str):
+        """Returns a the id of a duplicate block"""
+        block = copy.deepcopy(self._block_dict[id])
+        block["Parent"] = None
+        block["Next"] = None
+        id = self.generate_id()
+        self._block_dict[id] = block
+        return id
 
     def create_variable_add_block(self, line: str, variable_id: str, data_block_type: str, parent: str):
         """Wrapper function:
@@ -792,7 +810,6 @@ class Compiler():
         if expression_to_use == operator:
             Warning("This shouldn't happen - somehow have the expression the same as the operator?")
             return ""
-        # yeah i know, lots of duplicate code here. but i'm too scared to refactor in case it breaks everything :(
         
         if operator == "(":
             # handling stuff in between brackets
@@ -887,18 +904,7 @@ class Compiler():
 
             return formatted, False
         else:
-            # TODO attempt to fix issue with parenting operators to boolean operators. 
-            # i.e. 4 + 5 == 4 becomes
-            # 4 + (5 == 4)
-            # instead of 
-            # (4 + 5) == 4 in scratch.
-            # UPDATE, EVEN AFTER THE WHOLE DEBACLE OF MERGING, IT STILL DOESN'T WORK
-
-            # reverse, because we want to do lowest priority first. Scratch does top to bottom, list gives us bottom to top, so we want lowest
-            # priority at the bottom.
-            print("BEFORE", eval_list)
             eval_list.reverse()
-            print(eval_list)
 
             prev_id = None
             # for now, the parent is none so we can manually assign it to any parent we want later. 
@@ -912,18 +918,6 @@ class Compiler():
                 if evaluation["Operator"] == "。":
                     raise scratch_exceptions.UnsupportedFeature("!= (please use == instead)")
                 
-                # success_1 = False
-                # success_2 = False
-                # if evaluation["Value"][0].get("Value", None) is not None:
-                #     root_operator_1, success_1 = self.generate_evaluation(evaluation["Value"][0]["Value"])
-                #     if success_1:
-                #         evaluation["Value"][0] = self.get_variable_table_for_operator(root_operator_1)
-
-                # if evaluation["Value"][1].get("Value", None) is not None:
-                #     root_operator_2, success_2 = self.generate_evaluation(evaluation["Value"][1]["Value"])
-                #     if success_2:
-                #         evaluation["Value"][1] = self.get_variable_table_for_operator(root_operator_2)
-                
                 if BOOLEAN_OPERATORS.get(evaluation["Operator"], None) is None:
                     # if not a boolean operator, create a non-boolean operator. 
                     parent = self.create_operator(OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
@@ -933,11 +927,6 @@ class Compiler():
                 self.operator_parent_to(self._block_dict[root_operator], root_operator, parent)
 
                 prev_id = evaluation["Id"]
-                # if success_1:
-                #     self.operator_parent_to(self._block_dict[root_operator_1], root_operator_1, parent)
-                # if success_2:
-                #     self.operator_parent_to(self._block_dict[root_operator_2], root_operator_2, parent)
-
             return root_operator, True
 
     def morph_if_to_elif(self, if_id: str):
@@ -956,7 +945,7 @@ class Compiler():
         to forcefully parent to an else block, set fake_indent to True"""
         parent = self._most_recent_block[self._indent_level]
         block_id = self.generate_id()
-        
+
         self.create_block("control_if", {"CONDITION": [2, "TEMP"], "PARENT_TO_ELIF": fake_indent}, parent, block_id)
         self._most_recent_block[self._indent_level + 1] = block_id # this is for blocks inside the stack to parent to.
         self._most_recent_block[self._indent_level] = block_id # this is for blocks outside of the stack to parent to.
@@ -1121,7 +1110,7 @@ class Compiler():
                     self.operator_parent_to(self._block_dict[root_operator], root_operator, self._most_recent_block[self._indent_level])
                     self._indent_level += 1
                     # evaluate the "step"
-                    self.create_variable_add_block(str(step), variable_id, "changevariableby", self._most_recent_block[self._indent_level])
+                    self._most_recent_block[self._indent_level] = self.create_variable_add_block(str(step), variable_id, "changevariableby", self._most_recent_block[self._indent_level])
                     self._indent_level -= 1
                 elif tokens[anchor + 1] == "enumerate":
                     # enumerate loop
@@ -1130,17 +1119,42 @@ class Compiler():
                     pass
                 else:
                     # likely iterating through a list or variable
+                    # TODO finish this please
                     loop1 = tokens[anchor - 1]
-                    variable_id = self.generate_id()
+                    temp_variable_id = self.generate_id()
+                    self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Value": 0, "VariableId": temp_variable_id, "Name": "PYiterate"}, self._most_recent_block[self._indent_level])
                     self._most_recent_block[self._indent_level] = self.create_block("control_repeat", {"TIMES": None}, self._most_recent_block[self._indent_level])
+                    self._most_recent_block[self._indent_level + 1] = self._most_recent_block[self._indent_level]
+                    
+                    # for i part
                     id, success = self.generate_evaluation(tokens[anchor + 1])
                     operator_id = self.create_operator("operator_length", [{"Value": id}, {"Value": id}], self._most_recent_block[self._indent_level])
                     self.operator_parent_to(self._block_dict[operator_id], operator_id, self._most_recent_block[self._indent_level])
+                    
                     # append the generated variable to the variable list
+                    self._generated_variables["PYiterate"] = temp_variable_id 
+                    local_variables[temp_variable_id] = ["PYiterate", 0]
+
+                    variable_id = self.generate_id()
                     self._generated_variables[loop1] = variable_id 
                     local_variables[variable_id] = [loop1, 0]
-                    self._most_recent_block
-                    pass
+
+                    self._indent_level += 1
+                    # step
+                    if self.is_variable_id(id):
+                        length_of_id = id
+                    else:
+                        length_of_id = self.duplicate_block(id)
+                    operator_id = self.create_operator("operator_letter_of", [{"Value": temp_variable_id}, {"Value": length_of_id}], None)
+                    
+                    increment_id, success = self.generate_evaluation("PYiterate+1")
+                    self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": "PYiterate", "VariableId": temp_variable_id, "OperatorId": increment_id}, self._most_recent_block[self._indent_level])
+                    self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Name": loop1, "VariableId": variable_id, "OperatorId": "TEMP"}, self._most_recent_block[self._indent_level])
+                    # self.operator_parent_to(self._block_dict[length_of_id], length_of_id, operator_id)
+                    self.operator_parent_to(self._block_dict[operator_id], operator_id, self._most_recent_block[self._indent_level])
+
+                    self._indent_level -= 1
+
             elif function_found != -1:
                 function_id = self._functions[function_found]
                 args = get_value_in_brackets(v)[0]

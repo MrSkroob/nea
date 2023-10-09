@@ -4,16 +4,11 @@ from dependencies import scratch_project, scratch_enums
 sprite = scratch_project.Sprite("Sprite1")
 
 
-sam_variable = (4 + 5) == 4
+sam_variable = not (4 + 5) == 4
 
 
 nick = "hello world!"
 
 
-if (6 + 9) == 3:
+while not 1 == 1:
     pass
-
-
-for i in nick:
-    sprite.say("Hello world")
-

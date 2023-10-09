@@ -81,8 +81,8 @@ BOOLEAN_SUB = {
 
 BOOLEAN_ORDER = [
     "(",
-    "`",
     "¬",
+    "`",
     "<",
     ">",
     "¬",
@@ -375,7 +375,7 @@ class Compiler():
     def operator_parent_to(self, block_data_copy: dict, child: str, parent: str):
         """Similar to the parent_to method, but is usable outside of its wrapper functions"""
         block_data_copy["parent"] = parent
-        if self._block_dict[parent]["opcode"] == "control_if":
+        if self._block_dict[parent]["opcode"] == "control_if" or self._block_dict[parent]["opcode"] == "control_repeat_until":
             self._block_dict[parent]["inputs"]["CONDITION"][1] = child
         elif self._block_dict[parent]["opcode"] == "operator_not":
             self._block_dict[parent]["inputs"]["OPERAND"] = [
@@ -482,16 +482,16 @@ class Compiler():
                 # parent_block["next"] = child
                 block_data_copy["parent"] = self._most_recent_if[self._indent_level]
                 self._block_dict[self._most_recent_if[self._indent_level]]["next"] = child
-        elif parent_block["opcode"] == "control_repeat":
-            print(previous_indent, next_indent)
+        elif parent_block["opcode"] == "control_repeat" or parent_block["opcode"] == "control_repeat_until":
             if previous_indent == parent or next_indent is None:
-                print("Inner")
                 parent_block["inputs"]["SUBSTACK"] =  [
                     2,
                     child
                 ]
+                print("inner", parent)
             else:
                 parent_block["next"] = child
+                print("outer")
         else:
             self._if_layers = self._indent_level
             parent_block["next"] = child
@@ -512,6 +512,8 @@ class Compiler():
             block_data_copy["y"] = self._line_number * 25
         else:
             # create the basic template for any future arguments to add. 
+            block_data_copy["y"] = 0
+            block_data_copy["x"] = len(self._functions) * 200
             block_data_copy["shadow"] = True
             block_data_copy["mutation"] = {
                 "tagName": "mutation",
@@ -631,7 +633,10 @@ class Compiler():
                         "10"
                     ]
                 ]
-
+        elif opcode == "control_repeat_until":
+            block_data_copy["inputs"]["CONDITION"] = block_args["CONDITION"]
+            # block_data_copy["inputs"]["SUBSTACK"] = [2, "TEMP"]
+            print(block_data_copy)
         self._block_dict[block_id] = block_data_copy
         return block_id
 
@@ -651,6 +656,7 @@ class Compiler():
         # we ignore anything before the = sign, because it's irrelevant
     
         root_operator, success = self.generate_evaluation(line)
+
         variable_name = self.get_variable_name_from_id(variable_id)
         opcode = "data_" + data_block_type
         if success is False:
@@ -736,6 +742,9 @@ class Compiler():
         for i in BOOLEAN_SUB:
             # line = line.replace(i, BOOLEAN_SUB[i])
             line = re.sub(fr"\b{i}\b", BOOLEAN_SUB[i], line)
+
+        # regex doesn't like characters more than 1 letter long?
+        line = line.replace("not", BOOLEAN_SUB["not"])
         line = line.replace("==", BOOLEAN_SUB["=="])
         return line
 
@@ -993,7 +1002,6 @@ class Compiler():
             tokens = get_tokens(v)
             function_found = self.get_function_name(v)
             variable_name, _ = get_variable_name(v)
-
             if sprite_variable == "":
                 if "scratchproject.Sprite" in v:
                     # check if we've already defined a sprite variable
@@ -1114,6 +1122,7 @@ class Compiler():
                     self._indent_level -= 1
                 elif tokens[anchor + 1] == "enumerate":
                     # enumerate loop
+                    # for my sanity i'm likely not going to implement this. 
                     loop1 = tokens[anchor - 3]
                     loop2 = tokens[anchor - 1]
                     pass
@@ -1154,7 +1163,15 @@ class Compiler():
                     self.operator_parent_to(self._block_dict[operator_id], operator_id, self._most_recent_block[self._indent_level])
 
                     self._indent_level -= 1
-
+            elif "while" in tokens:
+                self._most_recent_block[self._indent_level] = self.create_block("control_repeat_until", {"CONDITION": [2, "TEMP"]}, self._most_recent_block[self._indent_level])
+                self._most_recent_block[self._indent_level + 1] = self._most_recent_block[self._indent_level]
+                line = v.lstrip() 
+                statement = line[5:].rstrip()[:-1].lstrip()
+                id, success = self.generate_evaluation("not " + statement)
+                if success is False:
+                    raise scratch_exceptions.UnsupportedFeature("bare booleans. Try 0 == 0 or 0 != 0 instead")
+                self.operator_parent_to(self._block_dict[id], id, self._most_recent_block[self._indent_level])
             elif function_found != -1:
                 function_id = self._functions[function_found]
                 args = get_value_in_brackets(v)[0]
@@ -1167,6 +1184,9 @@ class Compiler():
                         root_operator, success = self.generate_evaluation(param.strip('"'))
                         param_list[i] = root_operator
                 self._most_recent_block[self._indent_level] = self.create_block("procedures_call", {"FunctionId": function_id, "Args": param_list}, self._most_recent_block[self._indent_level])
+            elif "[" in tokens:
+                # lord help me trying to do indexing. 
+                pass
             elif variable_name is not None:
                 if variable_name not in self._generated_variables.keys():
                     if variable_name != sprite_variable:

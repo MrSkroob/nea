@@ -14,3 +14,4 @@ def repeat(times: int):
 
 repeat(40)
 ```
+![image](https://github.com/MrSkroob/nea/assets/72568574/911292d9-cf04-4268-86ea-314e5bb3e972)

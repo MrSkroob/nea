@@ -1,6 +1,16 @@
 # nea
 Python to Scratch compiler
 
-INSERT INSTRUCTIONS IN GENERAL HERE
+A really horrible compiler which only works for about 10% of Python's features.
 
-INSERT INSTALL INSTRUCTIONS HERE
+As of right now, it can turn this into Scratch code:
+```python
+hello = "Hello world"
+
+def repeat(times: int):
+    index = 0
+    while index < times:
+        index += 1
+
+repeat(40)
+```

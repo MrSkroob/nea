@@ -1,14 +1,14 @@
 from dependencies import scratch_project, scratch_enums
 # import scratch_compiler
 
-sprite = scratch_project.Sprite("Sprite1")
+sprite = scratch_project.Sprite("Sprite2")
 
+hello = "Hello world"
+hello[2] = "!"
 
-sam_variable = not (4 + 5) == 4
+def repeat(times: int):
+    index = 0
+    while index < times:
+        index += 1
 
-
-nick = "hello world!"
-
-
-while not 1 == 1:
-    pass
+repeat(40)

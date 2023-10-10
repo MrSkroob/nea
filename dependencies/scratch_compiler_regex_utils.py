@@ -14,6 +14,7 @@ LEFT_OPERATOR_MINUS = r".+?(?=\-=)"
 LEFT_OPERATOR_MUL = r".+?(?=\*=)"
 LEFT_OPERATOR_DIV = r".+?(?=\/=)"
 LEFT_OPERATOR_MOD = r".+?(?=\%=)"
+LEFT_BRACKET = r".+?(?=\[)"
 
 RIGHT_OPERATOR_EQUAL = r"(?<=\=).*"
 RIGHT_OPERATOR_PLUS = r"(?<=\+=).*"
@@ -28,7 +29,8 @@ GET_LEFT_SIDE = [
     LEFT_OPERATOR_MUL,
     LEFT_OPERATOR_DIV,
     LEFT_OPERATOR_MOD,
-    LEFT_OPERATOR_EQUAL # this is ordered at the back so we check other operators first. 
+    LEFT_BRACKET,
+    LEFT_OPERATOR_EQUAL,# this is ordered at the back so we check other operators first. 
                         # not doing this will make += match to =, resulting in the variable name being
                         # "variable_1 +"
 ]
@@ -39,7 +41,7 @@ GET_RIGHT_SIDE = [
     RIGHT_OPERATOR_MUL,
     RIGHT_OPERATOR_DIV,
     RIGHT_OPERATOR_MOD,
-    RIGHT_OPERATOR_EQUAL
+    RIGHT_OPERATOR_EQUAL,
 ]
 
 # regexes for operators without =

@@ -52,10 +52,6 @@ OPERATORS = {
     "%": "operator_mod",
 }
 
-STR_OPERATORS = {
-    "+=": "operator_length",
-    "+": "operator_length"
-}
 
 BOOLEAN_OPERATORS = {
     "。": "。", # I'll need special behaviour for this BECAUSE OF COURSE I DO
@@ -488,10 +484,8 @@ class Compiler():
                     2,
                     child
                 ]
-                print("inner", parent)
             else:
                 parent_block["next"] = child
-                print("outer")
         else:
             self._if_layers = self._indent_level
             parent_block["next"] = child
@@ -636,7 +630,10 @@ class Compiler():
         elif opcode == "control_repeat_until":
             block_data_copy["inputs"]["CONDITION"] = block_args["CONDITION"]
             # block_data_copy["inputs"]["SUBSTACK"] = [2, "TEMP"]
-            print(block_data_copy)
+        else:
+            # handling blocks that can be relatively """""easy""""" to translate
+
+            pass
         self._block_dict[block_id] = block_data_copy
         return block_id
 
@@ -788,7 +785,6 @@ class Compiler():
         if expression.find(left + operator + right) != -1:
             expression = expression.replace(left + operator + right, id_to_use)
 
-        print("Appending", operator)
 
         linked_list.append(
             {
@@ -886,20 +882,20 @@ class Compiler():
     def generate_evaluation(self, line: str) -> tuple[str, bool]:
         """Wrapper function for self.evaluate and self.evaluate_boolean Returns the id of the root operator,
         to convieniently parent to a block."""
-
-        # we NUKE anything left to the = sign
-        if type(line) is str:
-            if search(line, SINGLE_EQUAL):
-                anchor = line.find("=")
-                line = line[anchor + 1:].lstrip().rstrip()
-        
+   
         eval_list = []
         # this code generates a list which we can use to iterate through to create 
         # the string of operators in the correct order. 
         line = self.convert_expression(line)
         line = self.replace_variable_name_with_id(line)
         line = self.convert_expression_boolean(line)
-        print("To convert:", line)
+
+        # we NUKE anything left to the = sign
+        if type(line) is str:
+            if search(line, SINGLE_EQUAL):
+                anchor = line.find("=")
+                line = line[anchor + 1:].lstrip().rstrip()
+
         # line = self.evaluate_boolean(line, linked_list)
         line = self.evaluate(line, eval_list)
 
@@ -1001,7 +997,7 @@ class Compiler():
 
             tokens = get_tokens(v)
             function_found = self.get_function_name(v)
-            variable_name, _ = get_variable_name(v)
+            variable_name, expression_used = get_variable_name(v)
             if sprite_variable == "":
                 if "scratchproject.Sprite" in v:
                     # check if we've already defined a sprite variable
@@ -1017,7 +1013,7 @@ class Compiler():
 
                     sprite_variable, _ = get_variable_name(v)
                     sprite_index = self._sprite_list.index(sprite_name)
-                    self._generated_variables[sprite_variable] = "PY_COMPILER"
+                    self._generated_variables[sprite_variable] = "PY_COMPILER" + self.generate_id()
 
                 elif "scratchproject.Studio" in v:
                     if sprite_variable: raise scratch_exceptions.TooManySprites
@@ -1025,7 +1021,7 @@ class Compiler():
                     sprite_variable, _ = get_variable_name(v)
                     sprite_is_studio = True
                     sprite_index = studio_index
-                    self._generated_variables[sprite_variable] = "PY_COMPILER"
+                    self._generated_variables[sprite_variable] = "PY_COMPILER" + self.generate_id()
             if "def" in tokens:                
                 function_name = tokens[tokens.index("def") + 1]
                 # because I'm not expecting for there to be children oustide the inner stack for definitions, 
@@ -1058,7 +1054,7 @@ class Compiler():
                         
                 # creating list of params for this specific function so we can use it in variables later.
                 self._functions[function_name] = function_id
-                self._function_variables[self._indent_level + 1] = params     
+                self._function_variables[self._indent_level + 1] = params  
             elif "if" in tokens:
                 self._most_recent_if[self._if_layers + self._indent_level] = self.if_statement(v)
             elif "else" in tokens:
@@ -1184,11 +1180,11 @@ class Compiler():
                         root_operator, success = self.generate_evaluation(param.strip('"'))
                         param_list[i] = root_operator
                 self._most_recent_block[self._indent_level] = self.create_block("procedures_call", {"FunctionId": function_id, "Args": param_list}, self._most_recent_block[self._indent_level])
-            elif "[" in tokens:
-                # lord help me trying to do indexing. 
-                pass
             elif variable_name is not None:
-                if variable_name not in self._generated_variables.keys():
+                if expression_used == LEFT_BRACKET:
+                    # TODO final thing, indexing!... and maybe lists AAAAAAAAAAAAAAAAAAAAA
+                    print(tokens, "Indexing!!!")
+                elif variable_name not in self._generated_variables.keys():
                     if variable_name != sprite_variable:
                         variable_value, _ = get_variable_value(v)
                         variable_id = self.generate_id()

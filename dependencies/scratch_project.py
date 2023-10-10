@@ -63,10 +63,11 @@ class Studio():
             "opcode": "control_wait",
             "inputs": {
                 "DURATION": [
-
+                    seconds
                 ]
             }
         }
+    
     def wait_until(self, evaluation: bool):
         pass
     def stop(self, location: scratch_enums.Stop):

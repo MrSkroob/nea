@@ -185,6 +185,7 @@ class Compiler():
         self._temp_id = 0
         self._line_number = 0
         self._prev_line_number = -1
+        self._function_layer_index = -1
         self._if_layers = 0
         self._indent_level = 0
 
@@ -196,7 +197,7 @@ class Compiler():
 
     def is_parameter(self, param_name: str):
         try:
-            return param_name in self._function_variables[self._indent_level]
+            return param_name in self._function_variables[self._function_layer_index]
         except KeyError:
             return False
 
@@ -207,10 +208,12 @@ class Compiler():
         return False, None
 
     def replace_variable_name_with_id(self, line: str):
-        # FIXME check if line is an actual string, so it doesn't get replaced with an id.
         if type(line) is not str:
             Warning("Expected a string, got type:", type(line))
             return line
+        # if self._function_variables.get(self._indent_level, None) is not None:
+        #     for i in self._function_variables[self._indent_level]:
+        #         line = re.sub(r"\b" + i + r"\b", self.generate_id(), line)
         for i in self._generated_variables:
             line = re.sub(r"\b" + i + r"\b", self._generated_variables[i], line)
         return line
@@ -295,13 +298,13 @@ class Compiler():
             ]
         else:
             is_argument =  self.is_parameter(value["Value"])
-            if self.is_id(value["Value"]):
+            if self.is_id(value["Value"]) or is_argument:
                 # check if value exists as an argument in a function
                 success, name = self.is_variable_id(value["Value"])
                 if is_argument or not success:
                     # this should always be true honestly
                     if is_argument:
-                        root = self._function_variables[self._indent_level][value["Value"]]
+                        root = self._function_variables[self._function_layer_index][value["Value"]]
                         param_type = root[1]
                         param = root[2]
                         value["Value"] = self.create_argument(param_type, param, parent_id)
@@ -412,8 +415,8 @@ class Compiler():
 
         self._block_dict[block_id] = block_data_copy
 
-        if self._line_number not in self._function_variables.keys():
-            self._function_variables[self._line_number] = []
+        # if self._line_number not in self._function_variables.keys():
+        #     self._function_variables[self._line_number] = []
         if parent is not None:
             self.operator_parent_to(block_data_copy, block_id, parent)
         value1 = self.format_value_for_operator(values[0], block_id)
@@ -665,7 +668,7 @@ class Compiler():
             elif self.is_parameter(value["Value"]):
                 value["Name"] = variable_name
                 # we check if the "value" is part of the function parameter
-                root = self._function_variables[self._indent_level][value["Value"]]
+                root = self._function_variables[self._function_layer_index][value["Value"]]
                 # pre-generate id
                 id_to_use = self.generate_id()
                 value["Value"] = id_to_use
@@ -897,7 +900,7 @@ class Compiler():
                 line = line[anchor + 1:].lstrip().rstrip()
 
         # line = self.evaluate_boolean(line, linked_list)
-        line = self.evaluate(line, eval_list)
+        self.evaluate(line, eval_list)
 
         if eval_list == []:
             # if the list is empty, then that means the statement is a simple 
@@ -998,6 +1001,10 @@ class Compiler():
             tokens = get_tokens(v)
             function_found = self.get_function_name(v)
             variable_name, expression_used = get_variable_name(v)
+
+            if self._indent_level < self._function_layer_index:
+                self._function_layer_index = -1
+
             if sprite_variable == "":
                 if "scratchproject.Sprite" in v:
                     # check if we've already defined a sprite variable
@@ -1055,6 +1062,7 @@ class Compiler():
                 # creating list of params for this specific function so we can use it in variables later.
                 self._functions[function_name] = function_id
                 self._function_variables[self._indent_level + 1] = params  
+                self._function_layer_index = self._indent_level + 1
             elif "if" in tokens:
                 self._most_recent_if[self._if_layers + self._indent_level] = self.if_statement(v)
             elif "else" in tokens:

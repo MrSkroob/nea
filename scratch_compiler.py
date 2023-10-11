@@ -164,7 +164,7 @@ def save_data(file_name: str, data: dict):
 
 class Compiler():
     def __init__(self, file_to_compile: str, file_to_compile_to: str) -> None:
-        studio = Studio()
+        studio = Sprite("COMPILER")
         self._scratch_block_data = studio
         self._target_code = load_python_file(file_to_compile)
         self._result_file_code = load_scratch_project(file_to_compile_to)
@@ -211,9 +211,6 @@ class Compiler():
         if type(line) is not str:
             Warning("Expected a string, got type:", type(line))
             return line
-        # if self._function_variables.get(self._indent_level, None) is not None:
-        #     for i in self._function_variables[self._indent_level]:
-        #         line = re.sub(r"\b" + i + r"\b", self.generate_id(), line)
         for i in self._generated_variables:
             line = re.sub(r"\b" + i + r"\b", self._generated_variables[i], line)
         return line
@@ -1000,7 +997,7 @@ class Compiler():
 
             tokens = get_tokens(v)
             function_found = self.get_function_name(v)
-            variable_name, expression_used = get_variable_name(v)
+            variable_name, _ = get_variable_name(v)
 
             if self._indent_level < self._function_layer_index:
                 self._function_layer_index = -1
@@ -1189,10 +1186,7 @@ class Compiler():
                         param_list[i] = root_operator
                 self._most_recent_block[self._indent_level] = self.create_block("procedures_call", {"FunctionId": function_id, "Args": param_list}, self._most_recent_block[self._indent_level])
             elif variable_name is not None:
-                if expression_used == LEFT_BRACKET:
-                    # TODO final thing, indexing!... and maybe lists AAAAAAAAAAAAAAAAAAAAA
-                    print(tokens, "Indexing!!!")
-                elif variable_name not in self._generated_variables.keys():
+                if variable_name not in self._generated_variables.keys():
                     if variable_name != sprite_variable:
                         variable_value, _ = get_variable_value(v)
                         variable_id = self.generate_id()
@@ -1214,7 +1208,13 @@ class Compiler():
                 if variable_name != sprite_variable:
                     variable_id = self._generated_variables[variable_name]
                     self.create_variable_add_block(v, variable_id, "setvariableto", self._most_recent_block[self._indent_level])
-
+            elif sprite_variable != "" and sprite_variable in tokens:
+                anchor = tokens.index(sprite_variable)
+                self.generate_evaluation()
+                # yay, __getattribute__ can do behaviour that I can get from lua.
+                # e.g. Class["ClassMethod"]()
+                self._scratch_block_data.__getattribute__(tokens[anchor + 2])()
+                
             self._prev_line_number = self._line_number
 
         if not sprite_is_studio:

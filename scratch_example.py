@@ -9,5 +9,7 @@ def repeat(times: int):
     index = 0
     while index < times:
         index += 1
+        sprite.say(index)
+        sprite.wait(0.5)
 
 repeat(40)

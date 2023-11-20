@@ -6,7 +6,7 @@ import zipfile
 import re
 import copy
 from dependencies import scratch_exceptions
-from dependencies.scratch_project import Sprite, Studio
+from dependencies.scratch_project import Sprite
 from dependencies.scratch_compiler_regex_utils import *
 
 # useful regexes
@@ -163,6 +163,8 @@ def save_data(file_name: str, data: dict):
 
 
 class Compiler():
+    """Please note that all methods in here should be private, except Compile. They should not be used
+    outside of the class."""
     def __init__(self, file_to_compile: str, file_to_compile_to: str) -> None:
         studio = Sprite("COMPILER")
         self._scratch_block_data = studio
@@ -214,6 +216,15 @@ class Compiler():
         for i in self._generated_variables:
             line = re.sub(r"\b" + i + r"\b", self._generated_variables[i], line)
         return line
+
+    def is_surrounded_by_quotes(self, line: str):
+        first_char = line[0]
+        last_char = line[-1]
+        if first_char != "'" and first_char != '"':
+            return False
+        
+        return last_char == first_char
+
 
     def get_next_id(self):
         """Predicts what the next id might be"""
@@ -342,24 +353,10 @@ class Compiler():
         """Assigns value to boolean operator"""
         self.__assign_to_operator(operator_to_assign_to, block_id, "OPERAND")
     
-    def __assign_to_operator(self, operator_to_assign_to: str, block_id: str, parameter: str):
-        """This should not be used outside of the two wrapper methods:
-        assign_to_default_operator 
-        and
-        assign_to_boolean_operator"""
-        param1 = parameter + "1"
-        param2 = parameter + "2"
-        if self._block_dict[operator_to_assign_to]["inputs"][param1][1] == block_id:
-                self._block_dict[operator_to_assign_to]["inputs"][param1] = [
-                    3,
-                    block_id,
-                    [
-                        4,
-                        ""
-                    ]
-                ]
-        elif self._block_dict[operator_to_assign_to]["inputs"][param2][1] == block_id:
-            self._block_dict[operator_to_assign_to]["inputs"][param2] = [
+    def single_assign_to_operator(self, operator_to_assign_to: str, block_id: str, parameter: str):
+        """Used by the assign_to_operator method."""
+        if self._block_dict[operator_to_assign_to]["inputs"][parameter][1] == block_id:
+            self._block_dict[operator_to_assign_to]["inputs"][parameter] = [
                 3,
                 block_id,
                 [
@@ -367,6 +364,34 @@ class Compiler():
                     ""
                 ]
             ]
+
+    def __assign_to_operator(self, operator_to_assign_to: str, block_id: str, parameter: str):
+        """This should not be used outside of the two wrapper methods:
+        assign_to_default_operator 
+        and
+        assign_to_boolean_operator"""
+        self.single_assign_to_operator(operator_to_assign_to, block_id, parameter + "1")
+        self.single_assign_to_operator(operator_to_assign_to, block_id, parameter + "2")
+        # param1 = parameter + "1"
+        # param2 = parameter + "2"
+        # if self._block_dict[operator_to_assign_to]["inputs"][param1][1] == block_id:
+        #         self._block_dict[operator_to_assign_to]["inputs"][param1] = [
+        #             3,
+        #             block_id,
+        #             [
+        #                 4,
+        #                 ""
+        #             ]
+        #         ]
+        # elif self._block_dict[operator_to_assign_to]["inputs"][param2][1] == block_id:
+        #     self._block_dict[operator_to_assign_to]["inputs"][param2] = [
+        #         3,
+        #         block_id,
+        #         [
+        #             4,
+        #             ""
+        #         ]
+        #     ]
 
     def operator_parent_to(self, block_data_copy: dict, child: str, parent: str):
         """Similar to the parent_to method, but is usable outside of its wrapper functions"""
@@ -379,27 +404,36 @@ class Compiler():
                 child
             ]
         elif self._block_dict[parent]["opcode"] == "control_repeat":
-            self._block_dict[parent]["inputs"]["TIMES"] = [
-                3,
-                child,
-                [
-                    6,
-                    "10"
-                ]
-            ]
+            self._block_dict[parent]["inputs"]["TIMES"][1] = child
         elif self._block_dict[parent]["opcode"] == "operator_length":
             value = self.format_value_for_operator(child, parent)
             self._block_dict[parent]["inputs"]["STRING"] = value
-        elif self._block_dict[parent]["opcode"] in BOOLEAN_OPERATOR_LIST:
-            # check if operator is a boolean operator
-            self.assign_to_boolean_operator(parent, child)
         else:
-            # operator is NOT a boolean operator
-            try:
-                # find the value variable inside
-                self._block_dict[parent]["inputs"]["VALUE"][1] = child
-            except KeyError:
-                self.assign_to_default_operator(parent, child)
+            split = self._block_dict[parent]["opcode"].split("_")[0] 
+            if split == "operator" or split == "data":
+                if self._block_dict[parent]["opcode"] in BOOLEAN_OPERATOR_LIST:
+                    # check if operator is a boolean operator
+                    self.assign_to_boolean_operator(parent, child)
+                else:
+                    # operator is NOT a boolean operator
+                    try:
+                        # find the value variable inside
+                        self._block_dict[parent]["inputs"]["VALUE"][1] = child
+                    except KeyError:
+                        self.assign_to_default_operator(parent, child)
+            else:
+                # not an operator
+                block_data = getattr(self._scratch_block_data, split[1])()
+                if block_data is None:
+                    raise NotImplementedError("Sorry, this scratch block hasn't been implemented yet!")
+                for i in block_data["INPUT_DIR"]:
+                    if self._block_dict[parent]["inputs"][i] != "TEMP": continue
+                    value = self.format_value_for_operator(child, parent)
+                    self._block_dict[parent]["inputs"][i] = value
+                    # self._block_dict[parent]["inputs"][i] = [
+                    #     3,
+                    #     child
+                    # ]
 
     def create_operator(self, opcode: str, values: list[dict, dict], parent: str | None, ID=None):
         """Creates an operator block given the parameters"""
@@ -504,7 +538,7 @@ class Compiler():
             self.__parent_to(block_data_copy, block_args, block_id, parent)
         if opcode != "procedures_prototype":
             block_data_copy["y"] = self._line_number * 25
-        else:
+        if opcode == "procedures_prototype":
             # create the basic template for any future arguments to add. 
             block_data_copy["y"] = 0
             block_data_copy["x"] = len(self._functions) * 200
@@ -526,7 +560,7 @@ class Compiler():
             }
             # del block_data_copy["x"]
             # del block_data_copy["y"]
-        if opcode == "procedures_call":
+        elif opcode == "procedures_call":
             block_data_copy = copy.deepcopy(self._block_dict[block_args["FunctionId"]])
             block_data_copy["opcode"] = opcode
             block_data_copy["shadow"] = False
@@ -598,7 +632,7 @@ class Compiler():
             block_data_copy["inputs"]["VALUE"] = [
                 1,
                 [
-                    4,
+                    5,
                     block_args["Value"]
                 ]
             ]
@@ -608,7 +642,7 @@ class Compiler():
                     block_args.get("VariableId", None)
                 ]
             }
-            pass
+            print(block_data_copy)
             # if block_args.get("value")
         elif opcode == "control_if":
             if block_args.get("CONDITION", None) is not None:
@@ -630,10 +664,16 @@ class Compiler():
         elif opcode == "control_repeat_until":
             block_data_copy["inputs"]["CONDITION"] = block_args["CONDITION"]
             # block_data_copy["inputs"]["SUBSTACK"] = [2, "TEMP"]
-        else:
+        elif block_args:
             # handling blocks that can be relatively """""easy""""" to translate
-
-            pass
+            for i in block_args["INPUT_DIR"]:
+                block_data_copy["inputs"][i] = [
+                1,
+                [
+                    block_args["default"],
+                    "TEMP"
+                ]
+            ]
         self._block_dict[block_id] = block_data_copy
         return block_id
 
@@ -653,6 +693,8 @@ class Compiler():
         # we ignore anything before the = sign, because it's irrelevant
     
         root_operator, success = self.generate_evaluation(line)
+
+        print(root_operator, success)
 
         variable_name = self.get_variable_name_from_id(variable_id)
         opcode = "data_" + data_block_type
@@ -679,6 +721,7 @@ class Compiler():
             else:
                 # regular value like 8 :P
                 value["Name"] = variable_name
+                value["VariableId"] = variable_id
                 self._most_recent_block[self._indent_level] = self.create_block(opcode, value, parent)
         else:
             self._most_recent_block[self._indent_level] = self.create_block(opcode, {"Name": variable_name, "VariableId": variable_id, "OperatorId": "TEMP"}, parent)
@@ -717,16 +760,18 @@ class Compiler():
         """Formats the expression to have no whitespace"""
         if type(line) is not str:
             return line
+        original = line
         line = "".join(line.split())
         for i in COMBINED_OPERATORS:
             index = line.find(i)
             if index != -1:
+                print(line)
                 variable_name = search(line, LEFT_ANY_OPERATOR).strip()
                 right_side = line[index + 2:].strip()
                 operator = COMBINED_OPERATORS[i]
 
                 return variable_name + operator + right_side
-        return line
+        return line, original
     
     def convert_expression_boolean(self, line: str):
         """Formats the expression to have no whitespace
@@ -735,7 +780,7 @@ class Compiler():
         if type(line) is not str:
             # yeah i know the function LITERALLY ASKS FOR A STR
             return line
-        line = "".join(line.split())
+        original = line
         for i in BOOLEAN_SUB:
             # line = line.replace(i, BOOLEAN_SUB[i])
             line = re.sub(fr"\b{i}\b", BOOLEAN_SUB[i], line)
@@ -743,12 +788,10 @@ class Compiler():
         # regex doesn't like characters more than 1 letter long?
         line = line.replace("not", BOOLEAN_SUB["not"])
         line = line.replace("==", BOOLEAN_SUB["=="])
-        return line
+        return line, original
 
     def get_operator(self, line: str, operator_order: list[str]):
         """Returns the first operator it finds (left to right)"""
-        # FIXME, try to make operator find exact symbol, detects "==" instead of "="
-        # note this is also why variable isn't compiling properly. 
         operator = ""
         index = -1
         for i in operator_order:
@@ -757,9 +800,6 @@ class Compiler():
             
             line = line.replace("==", "`")
 
-            # temp = line
-            # temp = temp.replace("==", "")
-            
             index = line.find(i)
             if index != -1:
                 operator = i
@@ -885,10 +925,15 @@ class Compiler():
    
         eval_list = []
         # this code generates a list which we can use to iterate through to create 
-        # the string of operators in the correct order. 
-        line = self.convert_expression(line)
+        # the string of operators in the correct order.
+        original_text = {}
+        line, original = self.convert_expression(line)
+
+        if self.is_surrounded_by_quotes(original):
+            original_text[line] = original
+
         line = self.replace_variable_name_with_id(line)
-        line = self.convert_expression_boolean(line)
+        line, original = self.convert_expression_boolean(line)
 
         # we NUKE anything left to the = sign
         if type(line) is str:
@@ -904,10 +949,9 @@ class Compiler():
             # variable = variable 
             # or
             # variable = number
-
-            formatted = self.convert_expression(line)
-
-            return formatted, False
+            if original_text.get(line, None) is not None:
+                line = original_text[line].strip("'").strip('"')
+            return line, False
         else:
             eval_list.reverse()
 
@@ -916,13 +960,16 @@ class Compiler():
 
             root_operator = None
 
-
             for evaluation in eval_list:
                 if prev_id is None:
                     root_operator = evaluation["Id"]
                 if evaluation["Operator"] == "。":
                     raise scratch_exceptions.UnsupportedFeature("!= (please use == instead)")
                 
+                for i, value in enumerate(evaluation["Value"]):
+                    if original_text.get(value["Value"], None) is not None:
+                        evaluation[i] = original_text[value["Value"]]
+
                 if BOOLEAN_OPERATORS.get(evaluation["Operator"], None) is None:
                     # if not a boolean operator, create a non-boolean operator. 
                     parent = self.create_operator(OPERATORS[evaluation["Operator"]], evaluation["Value"], prev_id, evaluation["Id"])
@@ -1075,6 +1122,7 @@ class Compiler():
             elif "for" in tokens:
                 # we anchor at "in"
                 anchor = tokens.index("in")
+                print(tokens, tokens[anchor + 1])
                 if tokens[anchor + 1] == "range":
                     in_brackets = get_value_in_brackets(v)[0].split(",")
                     # regular for loop
@@ -1119,17 +1167,14 @@ class Compiler():
                     self.operator_parent_to(self._block_dict[root_operator], root_operator, self._most_recent_block[self._indent_level])
                     self._indent_level += 1
                     # evaluate the "step"
-                    self._most_recent_block[self._indent_level] = self.create_variable_add_block(str(step), variable_id, "changevariableby", self._most_recent_block[self._indent_level])
+                    start_root_operator, success = self.generate_evaluation(loop1 + "+" + str(step))
+                    self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Value": step, "VariableId": variable_id, "Name": loop1}, self._most_recent_block[self._indent_level])
+                    if success:
+                        self.operator_parent_to(self._block_dict[start_root_operator], start_root_operator, self._most_recent_block[self._indent_level])
+                    # self._most_recent_block[self._indent_level] = self.create_variable_add_block(str(step), variable_id, "changevariableby", self._most_recent_block[self._indent_level])
                     self._indent_level -= 1
-                elif tokens[anchor + 1] == "enumerate":
-                    # enumerate loop
-                    # for my sanity i'm likely not going to implement this. 
-                    loop1 = tokens[anchor - 3]
-                    loop2 = tokens[anchor - 1]
-                    pass
                 else:
                     # likely iterating through a list or variable
-                    # TODO finish this please
                     loop1 = tokens[anchor - 1]
                     temp_variable_id = self.generate_id()
                     self._most_recent_block[self._indent_level] = self.create_block("data_setvariableto", {"Value": 0, "VariableId": temp_variable_id, "Name": "PYiterate"}, self._most_recent_block[self._indent_level])
@@ -1209,11 +1254,43 @@ class Compiler():
                     variable_id = self._generated_variables[variable_name]
                     self.create_variable_add_block(v, variable_id, "setvariableto", self._most_recent_block[self._indent_level])
             elif sprite_variable != "" and sprite_variable in tokens:
+                pass
                 anchor = tokens.index(sprite_variable)
-                self.generate_evaluation()
+                # self.generate_evaluation()
                 # yay, __getattribute__ can do behaviour that I can get from lua.
                 # e.g. Class["ClassMethod"]()
-                self._scratch_block_data.__getattribute__(tokens[anchor + 2])()
+                block_data = getattr(self._scratch_block_data, tokens[anchor + 2], None)
+                if block_data is not None:
+                    try:
+                        block_data = block_data()
+                        opcode =  block_data["opcode"]
+                        self._most_recent_block[self._indent_level] = self.create_block(opcode, block_data, self._most_recent_block[self._indent_level])
+                        for i, value in enumerate(get_value_in_brackets(v)):
+                            id, success = self.generate_evaluation(value)
+                            if success:
+                                self.operator_parent_to(self._block_dict[id], id, self._most_recent_block[self._indent_level])
+                            else:
+                                value = self.format_value_for_operator({"Value": id}, self._most_recent_block[self._indent_level])
+                                self._block_dict[self._most_recent_block[self._indent_level]]["inputs"][block_data["INPUT_DIR"][i]] = value
+                                # self._block_dict[self._most_recent_block[self._indent_level]]["inputs"][block_data["INPUT_DIR"][i]] = [
+                                #     1,
+                                #     [
+                                #         block_data["default"],
+                                #         id
+                                #     ]
+                                # ]
+                    except TypeError:
+                        raise NotImplementedError("Sorry, this scratch block hasn't been implemented yet")
+                    # if not success:
+                    #     self._block_dict[self._most_recent_block[self._indent_level]]["inputs"][block_data["INPUT_DIR"]] = [
+                    #         1,
+                    #         [
+                    #             5,
+                    #             id
+                    #         ]
+                    #     ]
+                    # else:
+                    #     self.operator_parent_to(self._block_dict[id], id, self._most_recent_block[self._indent_level])
                 
             self._prev_line_number = self._line_number
 

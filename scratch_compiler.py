@@ -1,6 +1,7 @@
 # testing for basic idea of adding blocks to a scratch project.
 # this one is for a basic block.
 import time
+import ast
 import json
 import zipfile
 import re
@@ -99,7 +100,7 @@ COMBINED_OPERATORS = {
 
 # bodmas order
 ORDER = [
-    # highest precedence, lowest bottom
+    # highest precedence, lowest at the top
     "=",
     "-",
     "+",
@@ -747,7 +748,12 @@ class Compiler():
                     potential_variable_name = float(potential_variable_name)
                 except ValueError:
                     # whelp, i guess it wants to stay as a str. 
-                    pass
+                    stripped_double = potential_variable_name.strip('"')
+                    stripped_single = potential_variable_name.strip("'")
+                    if stripped_double != potential_variable_name:
+                        potential_variable_name = stripped_double
+                    elif stripped_single != potential_variable_name:
+                        potential_variable_name = stripped_single
             return {"Value": potential_variable_name}
 
     def get_variable_name_from_id(self, id: str):
@@ -1073,7 +1079,7 @@ class Compiler():
                     sprite_is_studio = True
                     sprite_index = studio_index
                     self._generated_variables[sprite_variable] = "PY_COMPILER" + self.generate_id()
-            if "def" in tokens:                
+            if "def" in tokens:  
                 function_name = tokens[tokens.index("def") + 1]
                 # because I'm not expecting for there to be children oustide the inner stack for definitions, 
                 # i don't do self._most_recent_block[self._indent_level]
@@ -1254,7 +1260,6 @@ class Compiler():
                     variable_id = self._generated_variables[variable_name]
                     self.create_variable_add_block(v, variable_id, "setvariableto", self._most_recent_block[self._indent_level])
             elif sprite_variable != "" and sprite_variable in tokens:
-                pass
                 anchor = tokens.index(sprite_variable)
                 # self.generate_evaluation()
                 # yay, __getattribute__ can do behaviour that I can get from lua.
